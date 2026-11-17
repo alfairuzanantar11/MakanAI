@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | Makan.ai</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #060608;
+            --accent-orange: #ff6b00;
+            --accent-hover: #ff8c33;
+            --glass-bg: rgba(14, 14, 16, 0.92);
+            --glass-border: rgba(255, 255, 255, 0.08);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: var(--bg-dark);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-image:
+                radial-gradient(circle at 10% 85%, rgba(255, 107, 0, 0.18), transparent 40%),
+                radial-gradient(circle at 90% 10%, rgba(255, 255, 255, 0.05), transparent 30%),
+                radial-gradient(circle at 50% 50%, rgba(255, 107, 0, 0.04), transparent 50%);
+            background-attachment: fixed;
+            overflow: hidden;
+            padding: 1.5rem;
+        }
+
+        /* ── Animated orbs ── */
+        .orb {
+            position: fixed; border-radius: 50%;
+            filter: blur(90px); opacity: 0.18;
+            animation: float 8s ease-in-out infinite;
+            pointer-events: none; z-index: 0;
+        }
+        .orb-1 { width: 480px; height: 480px; background: #ff6b00; top: -130px; left: -130px; animation-delay: 0s; }
+        .orb-2 { width: 320px; height: 320px; background: #ff8c33; bottom: -100px; right: -80px; animation-delay: -4s; }
+        .orb-3 { width: 220px; height: 220px; background: #fff; top: 55%; left: 65%; animation-delay: -2s; opacity: 0.06; }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) scale(1); }
+            50%       { transform: translateY(-28px) scale(1.05); }
+        }
+
+        /* ── Hero / Logo area ── */
+        .hero {
+            text-align: center;
+            margin-bottom: 1.75rem;
+            position: relative;
+            z-index: 10;
+        }
+        .hero-logo {
+            font-size: 2.6rem;
+            font-weight: 800;
+            letter-spacing: -2px;
+            line-height: 1;
+            background: linear-gradient(135deg, #ff6b00 0%, #ff8c33 50%, #ffb366 100%);
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradientShift 4s ease infinite;
+        }
+        @keyframes gradientShift {
+            0%   { background-position: 0% 50%; }
+            50%  { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .hero-dot {
+            -webkit-text-fill-color: transparent;
+            background: linear-gradient(135deg, #ff6b00, #ffb366);
+            -webkit-background-clip: text;
+            background-clip: text;
+        }
+        .hero-tagline {
+            font-size: 0.62rem;
+            color: rgba(255,255,255,0.28);
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-top: 6px;
+            font-weight: 600;
+        }
+
+        /* ── Card ── */
+        .login-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(32px);
+            -webkit-backdrop-filter: blur(32px);
+            border: 1px solid rgba(255, 107, 0, 0.12);
+            border-radius: 2rem;
+            padding: 2.5rem 2.25rem;
+            width: 100%;
+            max-width: 420px;
+            position: relative;
+            z-index: 10;
+            box-shadow:
+                0 32px 80px rgba(0,0,0,0.65),
+                0 0 0 1px rgba(255,107,0,0.07),
+                0 0 60px rgba(255, 107, 0, 0.06);
+            animation: cardIn 0.55s cubic-bezier(0.175, 0.885, 0.32, 1) forwards;
+        }
+        @keyframes cardIn {
+            from { opacity: 0; transform: translateY(28px) scale(0.96); }
+            to   { opacity: 1; transform: translateY(0)   scale(1); }
+        }
+
+        /* ── Role hint badge ── */
+        .role-hint {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            padding: 0.55rem 0.9rem;
+            border-radius: 0.75rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            border: 1px solid;
+            animation: fadeSlideIn 0.3s ease;
+            transition: all 0.3s ease;
+        }
+        .role-hint.buyer  { background: rgba(59,130,246,0.08); border-color: rgba(59,130,246,0.25); color: #93c5fd; }
+        .role-hint.seller { background: rgba(255,107,0,0.10); border-color: rgba(255,107,0,0.35);  color: #fdba74; }
+
+        /* ── Inputs ── */
+        .input-group { position: relative; margin-bottom: 1rem; }
+        .input-label {
+            font-size: 0.62rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 1.2px;
+            color: rgba(255,255,255,0.35); display: block; margin-bottom: 0.45rem;
+        }
+        .input-field {
+            width: 100%;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 0.875rem;
+            padding: 0.9rem 1rem;
+            color: white; font-size: 0.9rem;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        }
+        .input-field:focus {
+            border-color: rgba(255, 107, 0, 0.65);
+            background: rgba(255,255,255,0.065);
+            box-shadow: 0 0 0 3px rgba(255, 107, 0, 0.12);
+        }
+        .input-field::placeholder { color: rgba(255,255,255,0.15); }
+        .input-field.has-toggle { padding-right: 3rem; }
+
+        /* ── Password toggle (SVG eye icon) ── */
+        .pw-toggle {
+            position: absolute;
+            right: 0.9rem;
+            top: 50%;
+            transform: translateY(-50%);
+            margin-top: 11px; /* offset for label height */
+            cursor: pointer;
+            color: rgba(255,255,255,0.3);
+            transition: color 0.2s ease;
+            display: flex;
+            align-items: center;
+            padding: 4px;
+            background: none;
+            border: none;
+            outline: none;
+        }
+        .pw-toggle:hover { color: #ff6b00; }
+        .pw-toggle svg  { width: 18px; height: 18px; }
+        .eye-open  { display: block; }
+        .eye-shut  { display: none; }
+
+        /* ── Submit button ── */
+        .btn-submit {
+            width: 100%; padding: 1rem;
+            background: linear-gradient(135deg, #ff6b00, #e65c00);
+            color: white; font-size: 0.9rem;
+            font-weight: 800; letter-spacing: 0.5px;
+            border: none; border-radius: 0.875rem;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 8px 24px rgba(255, 107, 0, 0.35);
+            position: relative; overflow: hidden; margin-top: 0.5rem;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+        .btn-submit::before {
+            content: ''; position: absolute;
+            top: 0; left: -100%; width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+            transition: left 0.5s ease;
+        }
+        .btn-submit:hover::before { left: 100%; }
+        .btn-submit:hover  { transform: translateY(-2px); box-shadow: 0 14px 36px rgba(255, 107, 0, 0.5); }
+        .btn-submit:active { transform: translateY(0); box-shadow: 0 6px 16px rgba(255,107,0,0.3); }
+        .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        /* ── Tabs ── */
+        .auth-tabs {
+            display: flex;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 0.875rem;
+            padding: 4px; gap: 4px;
+            margin-bottom: 1.4rem;
+        }
+        .auth-tab {
+            flex: 1; padding: 0.65rem 0.5rem;
+            border-radius: 0.6rem;
+            font-size: 0.75rem; font-weight: 700;
+            text-align: center; cursor: pointer;
+            transition: all 0.25s ease;
+            color: rgba(255,255,255,0.3);
+            border: none; background: none;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            letter-spacing: 0.3px;
+        }
+        .auth-tab.active {
+            background: rgba(255, 107, 0, 0.16);
+            color: #ff8c33;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+        }
+
+        /* ── Form panels with slide animation ── */
+        .form-panel {
+            overflow: hidden;
+            transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+        .form-panel.hidden {
+            display: none;
+        }
+        .form-panel.slide-in {
+            animation: panelIn 0.28s ease forwards;
+        }
+        @keyframes panelIn {
+            from { opacity: 0; transform: translateX(12px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+
+        /* ── Messages ── */
+        .msg-box {
+            padding: 0.75rem 1rem; border-radius: 0.75rem;
+            font-size: 0.8rem; font-weight: 600;
+            margin-top: 0.75rem; display: none;
+            animation: fadeSlideIn 0.3s ease;
+        }
+        .msg-error   { background: rgba(239,68,68,0.1);  border: 1px solid rgba(239,68,68,0.3);  color: #f87171; }
+        .msg-success { background: rgba(34,197,94,0.1);  border: 1px solid rgba(34,197,94,0.3);  color: #4ade80; }
+        .msg-info    { background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); color: #93c5fd; }
+
+        @keyframes fadeSlideIn {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── Spinner ── */
+        .spinner {
+            display: inline-block; width: 16px; height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white; border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle; margin-right: 6px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Seller-only note on register form ── */
+        .seller-register-block {
+            display: none;
+            text-align: center;
+            padding: 1.5rem 1rem;
+            background: rgba(255,107,0,0.06);
+            border: 1px solid rgba(255,107,0,0.2);
+            border-radius: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        /* ── Demo pill ── */
+        .demo-pill {
+            display: inline-block;
+            font-size: 0.68rem;
+            color: rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            padding: 5px 12px;
+            border-radius: 8px;
+            margin-top: 1rem;
+            text-align: center;
+            width: 100%;
+        }
+
+        /* ── Bottom toggle link ── */
+        .toggle-link {
+            text-align: center;
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.3);
+            margin-top: 1.4rem;
+        }
+        .toggle-link span {
+            color: #ff6b00;
+            cursor: pointer;
+            font-weight: 700;
+            transition: color 0.2s ease;
+        }
+        .toggle-link span:hover { color: #ff8c33; }
+
+        /* ── Footer ── */
+        .footer-note {
+            text-align: center;
+            font-size: 0.68rem;
+            color: rgba(255,255,255,0.18);
+            margin-top: 1.25rem;
+        }
+
+        /* ── Divider ── */
+        .divider {
+            border: none;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            margin: 1.25rem 0 1rem;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 480px) {
+            body { padding: 1rem 0.75rem; }
+            .login-card { padding: 2rem 1.4rem; border-radius: 1.5rem; max-width: 400px; }
+            .hero-logo  { font-size: 2.2rem; }
+        }
+        @media (max-width: 360px) {
+            .login-card { padding: 1.6rem 1.1rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<!-- Hero / Logo -->
+<div class="hero">
+    <div class="hero-logo">makan<span class="hero-dot">.ai</span></div>
+    <p class="hero-tagline">Premium Digital Concierge</p>
+</div>
+
+<div class="login-card">
+
+    <!-- Sign In / Register tabs -->
+    <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-login"    onclick="switchTab('login')">Sign In</button>
+        <button class="auth-tab"        id="tab-register" onclick="switchTab('register')">Create Account</button>
+    </div>
+
+    <!-- Dynamic role hint (shown after email is typed) -->
+    <div class="role-hint" id="role-hint">
+        <span id="role-hint-icon"></span>
+        <span id="role-hint-text"></span>
+    </div>
+
+    <!-- ===== LOGIN FORM ===== -->
+    <form id="login-form" class="form-panel" onsubmit="handleLogin(event)">
+        <div class="input-group">
+            <label class="input-label" for="login-email">Email Address</label>
+            <input type="email" id="login-email" class="input-field"
+                   placeholder="your@email.com" required autocomplete="email"
+                   oninput="detectRoleFromEmail(this.value, 'login')">
+        </div>
+        <div class="input-group">
+            <label class="input-label" for="login-password">Password</label>
+            <input type="password" id="login-password" class="input-field has-toggle"
+                   placeholder="••••••••" required autocomplete="current-password">
+            <button type="button" class="pw-toggle" onclick="togglePw('login-password', this)" aria-label="Toggle password visibility">
+                <!-- Eye open -->
+                <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>
+                <!-- Eye shut -->
+                <svg class="eye-shut" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                    <line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+            </button>
+        </div>
+
+        <button type="submit" class="btn-submit" id="login-btn">Sign In</button>
+        <div class="msg-box msg-error"   id="login-error"></div>
+        <div class="msg-box msg-success" id="login-success"></div>
+
+        <div class="demo-pill">
+            💡 Default Seller: <code style="color:#ff8c33;">admin@admin.com</code> | Pass: <code style="color:#ff8c33;">admin</code>
+        </div>
+
+        <div class="toggle-link">
+            Don't have an account? <span onclick="switchTab('register')">Create Account →</span>
+        </div>
+    </form>
+
+    <!-- ===== REGISTER FORM ===== -->
+    <form id="register-form" class="form-panel hidden" onsubmit="handleRegister(event)">
+
+        <!-- Shown for normal buyer emails -->
+        <div id="buyer-register-fields">
+            <div class="input-group">
+                <label class="input-label" for="reg-name">Full Name</label>
+                <input type="text" id="reg-name" class="input-field" placeholder="Your full name">
+            </div>
+            <div class="input-group">
+                <label class="input-label" for="reg-email">Email Address</label>
+                <input type="email" id="reg-email" class="input-field"
+                       placeholder="your@gmail.com" autocomplete="email"
+                       oninput="detectRoleFromEmail(this.value, 'register')">
+            </div>
+            <div class="input-group">
+                <label class="input-label" for="reg-password">Password</label>
+                <input type="password" id="reg-password" class="input-field has-toggle"
+                       placeholder="Min. 6 characters" autocomplete="new-password">
+                <button type="button" class="pw-toggle" onclick="togglePw('reg-password', this)" aria-label="Toggle password visibility">
+                    <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    <svg class="eye-shut" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                        <line x1="1" y1="1" x2="23" y2="23"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="input-group">
+                <label class="input-label" for="reg-confirm">Confirm Password</label>
+                <input type="password" id="reg-confirm" class="input-field has-toggle"
+                       placeholder="Re-enter password" autocomplete="new-password">
+                <button type="button" class="pw-toggle" onclick="togglePw('reg-confirm', this)" aria-label="Toggle confirm password visibility">
+                    <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    <svg class="eye-shut" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                        <line x1="1" y1="1" x2="23" y2="23"/>
+                    </svg>
+                </button>
+            </div>
+            <button type="submit" class="btn-submit" id="register-btn">Create Account</button>
+        </div>
+
+        <!-- Shown when @admin.com email is detected on register tab -->
+        <div class="seller-register-block" id="seller-register-block">
+            <div style="font-size:2rem; margin-bottom:0.75rem;">🔒</div>
+            <p style="font-size:0.85rem; font-weight:700; color:#fdba74; margin-bottom:0.5rem;">
+                Seller Account Registration Restricted
+            </p>
+            <p style="font-size:0.75rem; color:rgba(255,255,255,0.4); line-height:1.6;">
+                Seller accounts (<code style="color:#ff6b00;">@admin.com</code>) can only be created<br>
+                by an existing seller from within the<br>
+                <strong style="color:#ff8c33;">Seller Dashboard</strong>.
+            </p>
+            <p style="font-size:0.72rem; color:rgba(255,255,255,0.35); margin-top:0.75rem;">
+                Already have a seller account?
+                <span style="color:#ff6b00; cursor:pointer; font-weight:700;"
+                      onclick="switchTab('login')">Sign in here →</span>
+            </p>
+        </div>
+
+        <div class="msg-box msg-error"   id="register-error"></div>
+        <div class="msg-box msg-success" id="register-success"></div>
+
+        <div class="toggle-link">
+            Already have an account? <span onclick="switchTab('login')">Sign In →</span>
+        </div>
+    </form>
+
+    <hr class="divider">
+    <p class="footer-note">
+        All accounts stored securely in <span style="color:#ff6b00;">Firestore Database</span>
+    </p>
+</div>
+
+<!-- Firebase Firestore Integration -->
+<script type="module">
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+import { firebaseConfig } from "./firebase-config.js";
+
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const db  = getFirestore(app);
+
+window.db = db;
+window._firestoreFns = { collection, addDoc, getDocs, query, where };
+
+// Check if user is already logged in
+const savedUser = localStorage.getItem('makan_user');
+if (savedUser) {
+    try {
+        const u = JSON.parse(savedUser);
+        if (u.role === 'seller') {
+            window.location.href = 'seller.html';
+        } else {
+            window.location.href = 'index.html';
+        }
+    } catch (e) {
+        localStorage.removeItem('makan_user');
+    }
+}
+
+// Auto-seed default seller account if users collection has no sellers
+async function ensureDefaultSeller() {
+    try {
+        const q = query(collection(db, 'users'), where('role', '==', 'seller'));
+        const snap = await getDocs(q);
+        if (snap.empty) {
+            await addDoc(collection(db, 'users'), {
+                name: 'Admin Utama',
+                email: 'admin@admin.com',
+                password: 'admin',
+                role: 'seller',
+                createdAt: new Date().toISOString()
+            });
+            console.log('Seeded initial default seller: admin@admin.com / admin');
+        }
+    } catch (err) {
+        console.warn('Init default seller check:', err);
+    }
+}
+
+ensureDefaultSeller();
+</script>
+
+<script>
+/* =====================================================
+   HELPERS
+===================================================== */
+let currentTab = 'login';
+
+function getRoleFromEmail(email) {
+    return email.trim().toLowerCase().endsWith('@admin.com') ? 'seller' : 'buyer';
+}
+
+function redirectByRole(role) {
+    window.location.href = (role === 'seller') ? 'seller.html' : 'index.html';
+}
+
+/* =====================================================
+   UI — ROLE HINT BADGE
+===================================================== */
+function detectRoleFromEmail(email, formContext) {
+    const hintEl    = document.getElementById('role-hint');
+    const hintIcon  = document.getElementById('role-hint-icon');
+    const hintText  = document.getElementById('role-hint-text');
+
+    if (formContext === 'register') {
+        const isSeller = email.trim().toLowerCase().endsWith('@admin.com');
+        document.getElementById('buyer-register-fields').style.display = isSeller ? 'none'  : 'block';
+        document.getElementById('seller-register-block').style.display = isSeller ? 'block' : 'none';
+    }
+
+    if (!email || !email.includes('@')) {
+        hintEl.style.display = 'none';
+        return;
+    }
+
+    const role = getRoleFromEmail(email);
+    hintEl.className = 'role-hint ' + role;
+
+    if (role === 'seller') {
+        hintIcon.textContent = '🍳';
+        hintText.textContent = 'Seller account detected — you\'ll be directed to the Seller Dashboard';
+    } else {
+        hintIcon.textContent = '🛍️';
+        hintText.textContent = 'Buyer account — you\'ll be directed to the main ordering page';
+    }
+    hintEl.style.display = 'flex';
+}
+
+/* =====================================================
+   UI — TAB SWITCHER (with slide animation)
+===================================================== */
+function switchTab(tab) {
+    currentTab = tab;
+    document.getElementById('tab-login').classList.toggle('active',    tab === 'login');
+    document.getElementById('tab-register').classList.toggle('active', tab === 'register');
+
+    const loginForm    = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+
+    if (tab === 'login') {
+        registerForm.classList.add('hidden');
+        loginForm.classList.remove('hidden');
+        loginForm.classList.add('slide-in');
+        setTimeout(() => loginForm.classList.remove('slide-in'), 300);
+    } else {
+        loginForm.classList.add('hidden');
+        registerForm.classList.remove('hidden');
+        registerForm.classList.add('slide-in');
+        setTimeout(() => registerForm.classList.remove('slide-in'), 300);
+    }
+
+    document.getElementById('role-hint').style.display = 'none';
+    clearMessages();
+}
+
+/* =====================================================
+   UI — PASSWORD TOGGLE (SVG eye icon)
+===================================================== */
+function togglePw(inputId, btn) {
+    const input = document.getElementById(inputId);
+    const isHidden = input.type === 'password';
+    input.type = isHidden ? 'text' : 'password';
+    const eyeOpen = btn.querySelector('.eye-open');
+    const eyeShut = btn.querySelector('.eye-shut');
+    if (eyeOpen && eyeShut) {
+        eyeOpen.style.display = isHidden ? 'none'  : 'block';
+        eyeShut.style.display = isHidden ? 'block' : 'none';
+    }
+}
+
+function clearMessages() {
+    ['login-error','login-success','register-error','register-success'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.style.display = 'none'; el.textContent = ''; }
+    });
+}
+
+function showMsg(id, msg) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent  = msg;
+    el.style.display = 'block';
+}
+
+function setLoading(btnId, loading, label) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.disabled = loading;
+    btn.innerHTML = loading
+        ? '<span class="spinner"></span> Please wait...'
+        : (label || 'Submit');
+}
+
+/* =====================================================
+   LOGIN — Powered by Firestore (Direct Account Store)
+===================================================== */
+async function handleLogin(e) {
+    e.preventDefault();
+    clearMessages();
+
+    const email    = document.getElementById('login-email').value.trim().toLowerCase();
+    const password = document.getElementById('login-password').value;
+    const role     = getRoleFromEmail(email);
+
+    setLoading('login-btn', true, 'Sign In');
+
+    try {
+        const db = window.db;
+        const { collection, getDocs, query, where } = window._firestoreFns;
+
+        // Query Firestore users collection for matching email
+        const q = query(collection(db, 'users'), where('email', '==', email));
+        const snap = await getDocs(q);
+
+        if (snap.empty) {
+            // Check if default admin account login attempt
+            if (email === 'admin@admin.com' && password === 'admin') {
+                const newAdmin = {
+                    name: 'Admin Utama',
+                    email: 'admin@admin.com',
+                    password: 'admin',
+                    role: 'seller',
+                    createdAt: new Date().toISOString()
+                };
+                const docRef = await window._firestoreFns.addDoc(collection(db, 'users'), newAdmin);
+                localStorage.setItem('makan_user', JSON.stringify({ id: docRef.id, ...newAdmin }));
+                showMsg('login-success', '✅ Welcome Seller! Redirecting to Seller Dashboard...');
+                setTimeout(() => redirectByRole('seller'), 900);
+                return;
+            }
+
+            setLoading('login-btn', false, 'Sign In');
+            if (role === 'seller') {
+                showMsg('login-error', '❌ Akun Seller tidak ditemukan. Hubungi administrator.');
+            } else {
+                showMsg('login-error', '❌ Akun tidak ditemukan. Silakan klik "Create Account" untuk mendaftar.');
+            }
+            return;
+        }
+
+        // Compare password directly from Firestore document
+        const userDoc = snap.docs[0].data();
+        const userId  = snap.docs[0].id;
+
+        if (userDoc.password !== password) {
+            setLoading('login-btn', false, 'Sign In');
+            showMsg('login-error', '❌ Password salah. Silakan coba lagi.');
+            return;
+        }
+
+        // Save session in localStorage
+        const sessionUser = {
+            id: userId,
+            name: userDoc.name || email.split('@')[0],
+            email: userDoc.email,
+            role: userDoc.role || role
+        };
+        localStorage.setItem('makan_user', JSON.stringify(sessionUser));
+
+        const targetRole = userDoc.role || role;
+        showMsg('login-success', `✅ Login berhasil! Mengalihkan ke ${targetRole === 'seller' ? 'Seller Dashboard' : 'Menu'}...`);
+        setTimeout(() => redirectByRole(targetRole), 900);
+
+    } catch (err) {
+        setLoading('login-btn', false, 'Sign In');
+        showMsg('login-error', `❌ Error: ${err.message}`);
+    }
+}
+
+/* =====================================================
+   REGISTER — Stores Buyer Accounts & Passwords in Firestore
+===================================================== */
+async function handleRegister(e) {
+    e.preventDefault();
+    clearMessages();
+
+    const name     = document.getElementById('reg-name').value.trim();
+    const email    = document.getElementById('reg-email').value.trim().toLowerCase();
+    const password = document.getElementById('reg-password').value;
+    const confirm  = document.getElementById('reg-confirm').value;
+    const role     = getRoleFromEmail(email);
+
+    // Block seller registration on public login page
+    if (role === 'seller') {
+        showMsg('register-error', '🔒 Akun seller (@admin.com) hanya dapat dibuat dari dalam Seller Dashboard.');
+        return;
+    }
+
+    if (!name) {
+        showMsg('register-error', '❌ Silakan masukkan nama lengkap.');
+        return;
+    }
+    if (!email || !email.includes('@')) {
+        showMsg('register-error', '❌ Masukkan alamat email yang valid.');
+        return;
+    }
+    if (password.length < 6) {
+        showMsg('register-error', '❌ Password minimal 6 karakter.');
+        return;
+    }
+    if (password !== confirm) {
+        showMsg('register-error', '❌ Password dan Konfirmasi Password tidak cocok.');
+        return;
+    }
+
+    setLoading('register-btn', true, 'Create Account');
+
+    try {
+        const db = window.db;
+        const { collection, addDoc, getDocs, query, where } = window._firestoreFns;
+
+        // Check if email is already registered in Firestore
+        const checkQ = query(collection(db, 'users'), where('email', '==', email));
+        const checkSnap = await getDocs(checkQ);
+
+        if (!checkSnap.empty) {
+            setLoading('register-btn', false, 'Create Account');
+            showMsg('register-error', '❌ Email ini sudah terdaftar. Silakan Sign In.');
+            return;
+        }
+
+        // Store new buyer account AND password in Firestore
+        const newAccount = {
+            name: name,
+            email: email,
+            password: password, // Stored in Firestore as requested
+            role: 'buyer',
+            createdAt: new Date().toISOString()
+        };
+
+        const docRef = await addDoc(collection(db, 'users'), newAccount);
+
+        // Store session
+        const sessionUser = {
+            id: docRef.id,
+            name: name,
+            email: email,
+            role: 'buyer'
+        };
+        localStorage.setItem('makan_user', JSON.stringify(sessionUser));
+
+        showMsg('register-success', '✅ Akun berhasil dibuat dan tersimpan di database! Mengalihkan...');
+        setTimeout(() => redirectByRole('buyer'), 1000);
+
+    } catch (err) {
+        setLoading('register-btn', false, 'Create Account');
+        showMsg('register-error', `❌ Error: ${err.message}`);
+    }
+}
+
+// Expose globals
+window.handleLogin         = handleLogin;
+window.handleRegister      = handleRegister;
+window.detectRoleFromEmail = detectRoleFromEmail;
+window.switchTab           = switchTab;
+window.togglePw            = togglePw;
+</script>
+
+</body>
+</html>

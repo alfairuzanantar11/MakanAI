@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seller Center | Makan.ai</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="WADCSS.css">
+    <link rel="stylesheet" href="seller.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background: #0a0a0a; color: white; }
+        .seller-container { max-width: 1000px; margin: 2rem auto; padding: 0 1rem; }
+        .stat-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 20px; padding: 1.5rem; }
+        .table-row { border-bottom: 1px solid rgba(255,255,255,0.05); transition: 0.3s; }
+        .table-row:hover { background: rgba(255,255,255,0.02); }
+        .badge-low { background: rgba(239, 68, 68, 0.1); color: #ef4444; padding: 2px 8px; border-radius: 6px; font-size: 10px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px) scale(0.97); }
+            to   { opacity: 1; transform: translateY(0)    scale(1); }
+        }
+    </style>
+
+    <!-- Session Guard: Verify seller role -->
+    <script>
+    (function() {
+        const saved = localStorage.getItem('makan_user');
+        if (!saved) {
+            window.location.href = 'login.html';
+        } else {
+            try {
+                const user = JSON.parse(saved);
+                if (user.role !== 'seller' && !user.email.toLowerCase().endsWith('@admin.com')) {
+                    alert('Akses khusus Seller! Mengalihkan ke halaman menu...');
+                    window.location.href = 'index.html';
+                } else {
+                    window.currentUser = user;
+                }
+            } catch(e) {
+                localStorage.removeItem('makan_user');
+                window.location.href = 'login.html';
+            }
+        }
+    })();
+    </script>
+</head>
+<body>
+
+<!-- Top Nav Bar -->
+<nav id="seller-nav" style="position:sticky; top:0; z-index:100; display:flex; justify-content:space-between; align-items:center; padding:1rem 2rem; background:rgba(10,10,10,0.9); backdrop-filter:blur(20px); border-bottom:1px solid rgba(255,255,255,0.06);">
+    <div style="display:flex; align-items:center; gap:10px;">
+        <span class="seller-nav-brand" style="font-size:1.3rem; font-weight:800; background:linear-gradient(135deg,#ff6b00,#ff8c33); -webkit-background-clip:text; -webkit-text-fill-color:transparent; letter-spacing:-0.5px;">makan.ai</span>
+        <span style="font-size:0.65rem; color:#555; text-transform:uppercase; letter-spacing:2px;">Seller Center</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px;">
+        <span id="seller-nav-username" style="font-size:0.75rem; color:rgba(255,255,255,0.7); font-weight:600;"></span>
+        <!-- Chat Inbox FAB Button -->
+        <button onclick="openChatInbox()" id="chat-inbox-btn"
+            style="position:relative; font-size:0.7rem; font-weight:700; color:#ff6b00; background:rgba(255,107,0,0.12); border:1px solid rgba(255,107,0,0.35); padding:7px 16px; border-radius:99px; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:7px;"
+            onmouseover="this.style.background='rgba(255,107,0,0.22)'; this.style.boxShadow='0 0 0 3px rgba(255,107,0,0.12)'"
+            onmouseout="this.style.background='rgba(255,107,0,0.12)'; this.style.boxShadow='none'">
+            <!-- Chat icon SVG -->
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            Inbox
+            <span id="chat-unread-badge" class="hidden" style="position:absolute; top:-5px; right:-5px; background:#ef4444; color:white; font-size:9px; font-weight:800; min-width:17px; height:17px; border-radius:99px; display:flex; align-items:center; justify-content:center; padding:0 3px; border:2px solid #0a0a0a; box-shadow:0 2px 8px rgba(239,68,68,0.5);">0</span>
+        </button>
+        <button onclick="handleLogout()"
+            style="font-size:0.7rem; font-weight:700; color:rgba(255,255,255,0.5); background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); padding:7px 14px; border-radius:99px; cursor:pointer; transition:all 0.2s;"
+            onmouseover="this.style.background='rgba(255,255,255,0.1)'; this.style.color='white'"
+            onmouseout="this.style.background='rgba(255,255,255,0.05)'; this.style.color='rgba(255,255,255,0.5)'">
+            Sign Out
+        </button>
+    </div>
+</nav>
+
+<div class="seller-container">
+
+    <!-- Dashboard Header -->
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <p class="dashboard-greeting" id="dashboard-greeting">Good morning! 👋</p>
+            <h1 class="dashboard-title">Seller Dashboard</h1>
+            <p style="color:rgba(255,255,255,0.3); font-size:0.78rem; margin-top:4px;">Manage your inventory and monitor sales</p>
+        </div>
+        <div class="flex gap-3 items-center">
+            <!-- OPEN/CLOSED Status pill with pulse dot -->
+            <div class="stat-card flex items-center gap-3 py-2 px-4" style="padding:0.5rem 1rem !important;">
+                <span style="font-size:0.65rem; color:rgba(255,255,255,0.35); font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Status</span>
+                <span class="status-pill status-pill-open">
+                    <span class="pulse-dot"></span>
+                    OPEN
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 stats-grid">
+
+        <!-- Total Items -->
+        <div class="stat-card" style="border-left: 3px solid rgba(99,130,246,0.6);">
+            <div class="stat-icon stat-icon-blue">
+                <!-- Box/grid icon -->
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                    <line x1="12" y1="22.08" x2="12" y2="12"/>
+                </svg>
+            </div>
+            <p style="color:rgba(255,255,255,0.4); font-size:0.65rem; text-transform:uppercase; letter-spacing:1px; font-weight:700; margin-bottom:4px;">Total Items</p>
+            <h2 style="font-size:2rem; font-weight:800; line-height:1; color:white;" id="total-items">0</h2>
+        </div>
+
+        <!-- Low Stock Alert -->
+        <div class="stat-card" style="border-left: 3px solid rgba(239,68,68,0.7);">
+            <div class="stat-icon stat-icon-red">
+                <!-- Warning icon -->
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+            </div>
+            <p style="color:rgba(255,255,255,0.4); font-size:0.65rem; text-transform:uppercase; letter-spacing:1px; font-weight:700; margin-bottom:4px;">Low Stock Alert</p>
+            <h2 style="font-size:2rem; font-weight:800; line-height:1; color:#f87171;" id="low-stock-count">0</h2>
+        </div>
+
+        <!-- Out of Stock -->
+        <div class="stat-card" style="border-left: 3px solid rgba(255,107,0,0.7);">
+            <div class="stat-icon stat-icon-orange">
+                <!-- X-circle icon -->
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="15" y1="9" x2="9" y2="15"/>
+                    <line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+            </div>
+            <p style="color:rgba(255,255,255,0.4); font-size:0.65rem; text-transform:uppercase; letter-spacing:1px; font-weight:700; margin-bottom:4px;">Out of Stock</p>
+            <h2 style="font-size:2rem; font-weight:800; line-height:1; color:#ff8c33;" id="out-of-stock-count">0</h2>
+        </div>
+    </div>
+
+    <!-- Inventory Section -->
+    <div class="stat-card overflow-hidden" style="margin-bottom:2rem;">
+        <div class="flex justify-between items-center mb-6">
+            <div class="flex items-center gap-3">
+                <div class="section-header-icon">📦</div>
+                <div>
+                    <h3 class="section-header">Inventory List</h3>
+                    <p style="font-size:0.65rem; color:rgba(255,255,255,0.3); margin-top:1px;">Add, edit and track your menu stock</p>
+                </div>
+            </div>
+            <button onclick="toggleModal()"
+                style="display:flex; align-items:center; gap:6px; background:linear-gradient(135deg,#ff6b00,#e65c00); color:white; font-size:0.72rem; font-weight:800; padding:8px 16px; border-radius:10px; border:none; cursor:pointer; box-shadow:0 4px 16px rgba(255,107,0,0.3); transition:all 0.2s;"
+                onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 8px 24px rgba(255,107,0,0.4)'"
+                onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 16px rgba(255,107,0,0.3)'">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add New Menu
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left table-zebra table-responsive-stack">
+                <thead>
+                    <tr class="table-thead">
+                        <th class="pb-4 font-medium" data-label="Menu Item">Menu Item</th>
+                        <th class="pb-4 font-medium" data-label="Category">Category</th>
+                        <th class="pb-4 font-medium text-right" data-label="Price">Price</th>
+                        <th class="pb-4 font-medium text-center" data-label="Stock">Stock</th>
+                        <th class="pb-4 font-medium text-right" data-label="Action">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="inventory-body">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Orders Section -->
+    <div class="mt-12" id="incoming-orders-section">
+        <!-- Section Header with Live Pulse -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div class="flex items-center gap-3">
+                <div class="section-header-icon" style="background:rgba(255,107,0,0.12); border-color:rgba(255,107,0,0.3); color:#ff8c33;">🧾</div>
+                <div>
+                    <div class="flex items-center gap-2.5 flex-wrap">
+                        <h2 class="section-header" style="margin:0;">Incoming Orders</h2>
+                        <span class="orders-live-badge">
+                            <span class="orders-live-dot"></span>
+                            Live Sync
+                        </span>
+                    </div>
+                    <p style="font-size:0.75rem; color:rgba(255,255,255,0.4); margin-top:3px;">
+                        Orders grouped by customer with direct actions and real-time tracking
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Orders Summary Metrics Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+            <div class="orders-summary-card active-filter" id="summary-card-all" onclick="setOrdersFilter('all')">
+                <div class="orders-summary-icon" style="background:rgba(255,255,255,0.06); color:#fff;">📦</div>
+                <div class="orders-summary-info">
+                    <span class="orders-summary-num" id="orders-count-total">0</span>
+                    <span class="orders-summary-label">Total Orders</span>
+                </div>
+            </div>
+
+            <div class="orders-summary-card orders-summary-card-pending" id="summary-card-pending" onclick="setOrdersFilter('pending')">
+                <div class="orders-summary-icon" style="background:rgba(255,107,0,0.15); color:#ff8c33;">⏳</div>
+                <div class="orders-summary-info">
+                    <div class="flex items-center gap-1.5">
+                        <span class="orders-summary-num text-orange-400" id="orders-count-pending">0</span>
+                        <span class="orders-new-pill" id="orders-badge-new" style="display:none;">NEW</span>
+                    </div>
+                    <span class="orders-summary-label">Pending</span>
+                </div>
+            </div>
+
+            <div class="orders-summary-card" id="summary-card-preparing" onclick="setOrdersFilter('preparing')">
+                <div class="orders-summary-icon" style="background:rgba(234,179,8,0.15); color:#facc15;">👨‍🍳</div>
+                <div class="orders-summary-info">
+                    <span class="orders-summary-num text-yellow-400" id="orders-count-preparing">0</span>
+                    <span class="orders-summary-label">Preparing</span>
+                </div>
+            </div>
+
+            <div class="orders-summary-card" id="summary-card-ontheway" onclick="setOrdersFilter('ontheway')">
+                <div class="orders-summary-icon" style="background:rgba(59,130,246,0.15); color:#60a5fa;">🛵</div>
+                <div class="orders-summary-info">
+                    <span class="orders-summary-num text-blue-400" id="orders-count-ontheway">0</span>
+                    <span class="orders-summary-label">On the Way</span>
+                </div>
+            </div>
+
+            <div class="orders-summary-card" id="summary-card-completed" onclick="setOrdersFilter('completed')">
+                <div class="orders-summary-icon" style="background:rgba(34,197,94,0.15); color:#4ade80;">✅</div>
+                <div class="orders-summary-info">
+                    <span class="orders-summary-num text-green-400" id="orders-count-completed">0</span>
+                    <span class="orders-summary-label">Completed</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls: Search & Status Filter Tabs -->
+        <div class="orders-controls-bar">
+            <!-- Search Bar -->
+            <div class="orders-search-wrapper">
+                <svg class="orders-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="orders-search-input" class="orders-search-input"
+                    placeholder="Search customer, order #ID, food item, or address..."
+                    autocomplete="off"
+                    oninput="handleOrdersSearch(this.value)" />
+                <button type="button" id="orders-search-clear" class="orders-search-clear" style="display:none;" onclick="clearOrdersSearch()">✕</button>
+            </div>
+
+            <!-- Filter Tabs -->
+            <div class="orders-filter-tabs" id="orders-filter-tabs">
+                <button type="button" class="orders-tab-btn active" data-filter="all" onclick="setOrdersFilter('all')">
+                    All <span class="orders-tab-count" id="tab-count-all">0</span>
+                </button>
+                <button type="button" class="orders-tab-btn" data-filter="pending" onclick="setOrdersFilter('pending')">
+                    Pending <span class="orders-tab-count" id="tab-count-pending">0</span>
+                </button>
+                <button type="button" class="orders-tab-btn" data-filter="preparing" onclick="setOrdersFilter('preparing')">
+                    Preparing <span class="orders-tab-count" id="tab-count-preparing">0</span>
+                </button>
+                <button type="button" class="orders-tab-btn" data-filter="ontheway" onclick="setOrdersFilter('ontheway')">
+                    On the Way <span class="orders-tab-count" id="tab-count-ontheway">0</span>
+                </button>
+                <button type="button" class="orders-tab-btn" data-filter="completed" onclick="setOrdersFilter('completed')">
+                    Completed <span class="orders-tab-count" id="tab-count-completed">0</span>
+                </button>
+                <button type="button" class="orders-tab-btn" data-filter="rejected" onclick="setOrdersFilter('rejected')">
+                    Rejected <span class="orders-tab-count" id="tab-count-rejected">0</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Customer Grouped Orders Container -->
+        <div id="customer-orders-container" class="space-y-4">
+            <div class="orders-empty-state">
+                <div class="orders-empty-icon">⏳</div>
+                <div class="text-white/80 font-bold text-sm">Loading incoming orders...</div>
+                <div class="text-white/40 text-xs mt-1">Connecting to live Firestore feed</div>
+            </div>
+        </div>
+
+        <!-- Hidden legacy tbody for backwards compatibility -->
+        <tbody id="orders-body" style="display:none;"></tbody>
+    </div>
+
+    <!-- =====================================================
+         MANAGE SELLER ACCOUNTS SECTION
+    ====================================================== -->
+    <div class="mt-10 mb-10">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <div class="flex items-center gap-3">
+                <div class="section-header-icon">👤</div>
+                <div>
+                    <h2 class="section-header">Seller Accounts</h2>
+                    <p style="font-size:0.65rem; color:rgba(255,255,255,0.3); margin-top:1px;">Manage who has access to this Seller Dashboard</p>
+                </div>
+            </div>
+            <button onclick="openAddSellerModal()"
+                style="display:flex; align-items:center; gap:6px; background:rgba(255,107,0,0.12); border:1px solid rgba(255,107,0,0.35); color:#ff8c33;
+                       font-size:0.72rem; font-weight:700; padding:8px 16px; border-radius:10px;
+                       cursor:pointer; transition:all 0.2s;"
+                onmouseover="this.style.background='rgba(255,107,0,0.22)'; this.style.boxShadow='0 4px 16px rgba(255,107,0,0.15)'"
+                onmouseout="this.style.background='rgba(255,107,0,0.12)'; this.style.boxShadow='none'">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Seller Account
+            </button>
+        </div>
+
+        <!-- Seller accounts list -->
+        <div style="background:rgba(255,255,255,0.03); border-radius:20px; border:1px solid rgba(255,255,255,0.07); overflow:hidden;">
+            <table class="w-full text-left table-responsive-stack">
+                <thead style="background:rgba(255,255,255,0.03);">
+                    <tr class="table-thead" style="border-bottom:1px solid rgba(255,255,255,0.07);">
+                        <th class="p-4" data-label="Name">Name</th>
+                        <th class="p-4" data-label="Email">Email (@admin.com)</th>
+                        <th class="p-4" data-label="Password">Password</th>
+                        <th class="p-4" data-label="Created">Created</th>
+                        <th class="p-4 text-right" data-label="Status">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="seller-accounts-body">
+                    <tr>
+                        <td colspan="5" class="p-6 text-center text-gray-600 text-sm">Loading seller accounts...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <p style="font-size:0.68rem; color:#666; margin-top:0.6rem; padding-left:4px;">
+            🔒 All seller accounts use <code style="color:#ff6b00;">@admin.com</code> and are stored in Firestore collection <code style="color:#ff6b00;">users</code>.
+        </p>
+    </div>
+
+    <!-- =====================================================
+         PRIVATE CHAT INBOX SECTION
+    ====================================================== -->
+    <div class="mt-10 mb-10" id="chat-inbox-section">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <div class="flex items-center gap-3">
+                <div class="section-header-icon">💬</div>
+                <div>
+                    <h2 class="section-header">
+                        Chat Inbox
+                        <span id="inbox-unread-pill" class="hidden" style="font-size:10px; background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3); padding:2px 9px; border-radius:99px; font-weight:700;">0 unread</span>
+                    </h2>
+                    <p style="font-size:0.65rem; color:rgba(255,255,255,0.3); margin-top:1px;">Private messages from buyers</p>
+                </div>
+            </div>
+            <button onclick="refreshChatInbox()"
+                style="display:flex; align-items:center; gap:6px; background:rgba(255,107,0,0.12); border:1px solid rgba(255,107,0,0.35); color:#ff8c33; font-size:0.72rem; font-weight:700; padding:8px 16px; border-radius:10px; cursor:pointer; transition:all 0.2s;"
+                onmouseover="this.style.background='rgba(255,107,0,0.22)'"
+                onmouseout="this.style.background='rgba(255,107,0,0.12)'">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-7.49"/></svg>
+                Refresh
+            </button>
+        </div>
+
+        <div style="background:rgba(255,255,255,0.03); border-radius:20px; border:1px solid rgba(255,255,255,0.07); overflow:hidden;" id="chat-inbox-list">
+            <div style="padding:2rem; text-align:center; color:#555; font-size:0.85rem;">Loading conversations...</div>
+        </div>
+    </div>
+
+    <!-- ───────────── MODALS ───────────── -->
+
+    <!-- Add Menu Modal -->
+    <div id="menuModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+        <div class="modal-card w-full max-w-md">
+            <!-- Header -->
+            <div class="modal-header">
+                <div>
+                    <p class="modal-header-title">Add New Menu Item</p>
+                    <p class="modal-header-sub">Fill in the details below to add to your inventory</p>
+                </div>
+                <button onclick="toggleModal()" class="modal-close-btn">✕</button>
+            </div>
+            <!-- Body -->
+            <div class="modal-body space-y-4">
+                <div>
+                    <label class="modal-label">Item Name</label>
+                    <input type="text" id="newName" placeholder="e.g. Bakso Mercon" class="modal-input">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="modal-label">Price (Rp)</label>
+                        <input type="number" id="newPrice" placeholder="20000" class="modal-input">
+                    </div>
+                    <div>
+                        <label class="modal-label">Initial Stock</label>
+                        <input type="number" id="newStock" placeholder="20" class="modal-input">
+                    </div>
+                </div>
+                <div>
+                    <label class="modal-label">Emoji &amp; Tags (comma separated)</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="newEmoji" placeholder="🍲" class="modal-input" style="width:72px; flex:none;">
+                        <input type="text" id="newTags" placeholder="spicy, meat" class="modal-input">
+                    </div>
+                </div>
+            </div>
+            <!-- Footer -->
+            <div style="padding:1rem 1.5rem 1.5rem; display:flex; gap:0.75rem;">
+                <button onclick="toggleModal()" class="modal-btn-cancel">Cancel</button>
+                <button onclick="saveNewMenu()" class="modal-btn-submit">Save Item</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Map Tracker Modal -->
+    <div id="trackerModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+        <div style="background:#161616; border:1px solid rgba(255,255,255,0.08); border-radius:24px; width:100%; max-width:560px; padding:1.5rem; display:flex; flex-direction:column; height:600px; overflow:hidden; animation:modalSlideUp 0.3s cubic-bezier(0.16,1,0.3,1) forwards; box-shadow:0 24px 80px rgba(0,0,0,0.6);">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1rem;">
+                <div>
+                    <h2 style="font-size:1rem; font-weight:800; color:#ff8c33;">📍 Live Delivery Simulator</h2>
+                    <p style="font-size:0.65rem; color:rgba(255,255,255,0.3); margin-top:3px;">Drag the driver icon to simulate moving to customer</p>
+                </div>
+                <button onclick="closeTrackerModal()" class="modal-close-btn">✕</button>
+            </div>
+            <div id="sellerMap" class="w-full flex-1 rounded-xl bg-white/5 mb-4 border border-white/10 z-0"></div>
+            <button onclick="closeTrackerModal()" class="modal-btn-cancel" style="width:100%;">Close</button>
+        </div>
+    </div>
+
+    <!-- Chat Modal -->
+    <div id="chatModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+        <div style="background:#161616; border:1px solid rgba(255,255,255,0.08); border-radius:24px; width:100%; max-width:440px; display:flex; flex-direction:column; height:500px; overflow:hidden; animation:modalSlideUp 0.3s cubic-bezier(0.16,1,0.3,1) forwards; box-shadow:0 24px 80px rgba(0,0,0,0.6);">
+            <!-- Chat header -->
+            <div style="background:linear-gradient(135deg,#ff6b00,#e65c00); padding:1rem 1.25rem; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+                <div>
+                    <h2 style="font-size:0.9rem; font-weight:800; color:rgba(0,0,0,0.9);">💬 Chat with Customer</h2>
+                    <p style="font-size:0.65rem; color:rgba(0,0,0,0.6); margin-top:2px;" class="order-id-label">Order #</p>
+                </div>
+                <button onclick="closeChatModal()" style="color:rgba(0,0,0,0.5); background:rgba(0,0,0,0.1); border:none; border-radius:8px; padding:4px 8px; font-size:1rem; cursor:pointer; transition:all 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.2)'" onmouseout="this.style.background='rgba(0,0,0,0.1)'">✕</button>
+            </div>
+            <div id="chatBody" class="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
+            </div>
+            <div style="padding:0.75rem; border-top:1px solid rgba(255,255,255,0.07); background:rgba(0,0,0,0.3); display:flex; gap:8px; flex-shrink:0;">
+                <input type="text" id="chatInput" placeholder="Type a message..." style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:0.6rem 1rem; color:white; font-size:0.85rem; outline:none; font-family:inherit; transition:border-color 0.2s;" onfocus="this.style.borderColor='rgba(255,107,0,0.5)'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'">
+                <button id="sendChatBtn" style="background:linear-gradient(135deg,#ff6b00,#e65c00); color:white; font-weight:800; padding:0.6rem 1.2rem; border-radius:12px; border:none; cursor:pointer; font-size:0.8rem; transition:all 0.2s;" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Inbox Panel (Slide-in from Right) -->
+    <div id="chatInboxPanel" class="hidden fixed inset-0 z-[200]" onclick="closeChatInboxOnBg(event)">
+        <div id="chatInboxPanelInner" style="position:fixed; top:0; right:0; height:100vh; width:100%; max-width:420px; background:#111; border-left:1px solid rgba(255,255,255,0.08); display:flex; flex-direction:column; box-shadow:-8px 0 40px rgba(0,0,0,0.6); transform:translateX(100%); transition:transform 0.35s cubic-bezier(0.4,0,0.2,1);">
+            <!-- Panel Header -->
+            <div style="background:linear-gradient(135deg,#ff6b00,#e65c00); padding:1.2rem 1.5rem; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+                <div>
+                    <h2 style="font-size:1rem; font-weight:800; color:rgba(0,0,0,0.9);">💬 Chat Inbox</h2>
+                    <p style="font-size:0.65rem; color:rgba(0,0,0,0.6); margin-top:2px;">Private messages from buyers</p>
+                </div>
+                <button onclick="closeChatInbox()" style="color:rgba(0,0,0,0.6); background:rgba(0,0,0,0.1); border:none; border-radius:8px; padding:4px 8px; font-size:1.1rem; cursor:pointer; transition:all 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.2)'" onmouseout="this.style.background='rgba(0,0,0,0.1)'">✕</button>
+            </div>
+
+            <!-- Conversation List -->
+            <div id="inboxConvoList" style="flex:1; overflow-y:auto; padding:0.75rem;">
+                <div style="text-align:center; padding:2rem; color:#555; font-size:0.85rem;">Loading...</div>
+            </div>
+
+            <!-- Conversation Detail (hidden by default, shown when a convo is opened) -->
+            <div id="inboxChatDetail" class="hidden" style="position:absolute; top:0; left:0; width:100%; height:100%; background:#111; display:flex; flex-direction:column;">
+                <div style="background:linear-gradient(135deg,#ff6b00,#e65c00); padding:1rem 1.5rem; display:flex; align-items:center; gap:10px; flex-shrink:0;">
+                    <button onclick="closeInboxDetail()" style="color:rgba(0,0,0,0.7); font-size:0.9rem; cursor:pointer; background:rgba(0,0,0,0.1); border:none; padding:4px 10px; border-radius:8px; font-weight:800;">← Back</button>
+                    <div>
+                        <h3 id="inboxDetailTitle" style="font-size:0.9rem; font-weight:800; color:rgba(0,0,0,0.9);">Order #</h3>
+                        <p id="inboxDetailSub" style="font-size:0.65rem; color:rgba(0,0,0,0.6);">Buyer Conversation</p>
+                    </div>
+                </div>
+                <div id="inboxChatBody" style="flex:1; overflow-y:auto; padding:1rem; display:flex; flex-direction:column; gap:10px;"></div>
+                <div style="padding:0.75rem; border-top:1px solid rgba(255,255,255,0.08); background:rgba(0,0,0,0.3); display:flex; gap:8px; flex-shrink:0;">
+                    <input type="text" id="inboxChatInput" placeholder="Reply to buyer..."
+                        style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:0.75rem; padding:0.6rem 1rem; color:white; font-size:0.85rem; outline:none; font-family:inherit; transition:border-color 0.2s;"
+                        onfocus="this.style.borderColor='rgba(255,107,0,0.5)'"
+                        onblur="this.style.borderColor='rgba(255,255,255,0.1)'"
+                        onkeypress="if(event.key==='Enter') sendInboxReply()">
+                    <button onclick="sendInboxReply()" style="background:linear-gradient(135deg,#ff6b00,#e65c00); color:white; font-weight:800; padding:0.6rem 1.2rem; border-radius:0.75rem; border:none; cursor:pointer; font-size:0.8rem; transition:all 0.2s; white-space:nowrap;" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Seller Account Modal -->
+    <div id="addSellerModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60]">
+        <div class="modal-card w-full max-w-md" style="animation:slideUp 0.35s ease-out;">
+            <!-- Header -->
+            <div class="modal-header">
+                <div>
+                    <p class="modal-header-title">Add New Seller Account</p>
+                    <p class="modal-header-sub">Creates a new seller login with @admin.com email</p>
+                </div>
+                <button onclick="closeAddSellerModal()" class="modal-close-btn">✕</button>
+            </div>
+            <!-- Body -->
+            <div class="modal-body" style="display:flex; flex-direction:column; gap:1rem;">
+
+                <div>
+                    <label class="modal-label">Full Name</label>
+                    <input type="text" id="new-seller-name" placeholder="e.g. Wahyu Admin" class="modal-input">
+                </div>
+
+                <div>
+                    <label class="modal-label">Email Address</label>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <input type="text" id="new-seller-email-prefix" placeholder="yourname"
+                            class="modal-input" style="flex:1;"
+                            oninput="updateSellerEmailPreview()">
+                        <span style="color:#ff6b00; font-weight:700; font-size:0.85rem; white-space:nowrap; flex-shrink:0;">@admin.com</span>
+                    </div>
+                    <p style="font-size:0.65rem; color:#444; margin-top:5px;">
+                        Full email: <span id="seller-email-preview" style="color:#ff8c33;">yourname@admin.com</span>
+                    </p>
+                </div>
+
+                <div style="position:relative;">
+                    <label class="modal-label">Password</label>
+                    <input type="password" id="new-seller-password" placeholder="Min. 6 characters" class="modal-input" style="padding-right:3rem;">
+                    <span onclick="togglePwSeller()" id="seller-pw-toggle"
+                        style="position:absolute; right:1rem; bottom:0.75rem; cursor:pointer; color:#555; font-size:0.85rem; user-select:none;">👁️</span>
+                </div>
+
+                <div id="add-seller-msg" style="display:none; padding:0.6rem 0.9rem; border-radius:0.6rem; font-size:0.78rem; font-weight:600;"></div>
+
+            </div>
+            <!-- Footer -->
+            <div style="padding:1rem 1.5rem 1.5rem; display:flex; gap:0.75rem;">
+                <button onclick="closeAddSellerModal()" class="modal-btn-cancel">Cancel</button>
+                <button onclick="createSellerAccount()" id="create-seller-btn" class="modal-btn-submit">Create Account</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Seller Firestore Logic for Accounts -->
+<script type="module">
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+import { getFirestore, collection, query, where, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+import { firebaseConfig } from "./firebase-config.js";
+
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const db  = getFirestore(app);
+
+window.db = db;
+
+/* ---- Load seller accounts directly from Firestore ---- */
+window.loadSellerAccounts = async function() {
+    const tbody = document.getElementById('seller-accounts-body');
+    if (!tbody) return;
+    try {
+        const q = query(collection(db, 'users'), where('role', '==', 'seller'));
+        const snap = await getDocs(q);
+
+        if (snap.empty) {
+            tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-gray-500 text-sm">No seller accounts found in Firestore.</td></tr>';
+            return;
+        }
+
+        const currentUser = JSON.parse(localStorage.getItem('makan_user') || '{}');
+        tbody.innerHTML = '';
+        snap.forEach(d => {
+            const data = d.data();
+            const isCurrentUser = currentUser.email && currentUser.email.toLowerCase() === (data.email || '').toLowerCase();
+            const date = data.createdAt ? new Date(data.createdAt).toLocaleDateString('id-ID') : '—';
+            tbody.innerHTML += `
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.05); transition:background 0.2s;" onmouseover="this.style.background='rgba(255,107,0,0.03)'" onmouseout="this.style.background='transparent'">
+                    <td class="p-3 text-sm font-semibold text-white" data-label="Name">
+                        ${data.name || '—'}
+                        ${isCurrentUser ? '<span style="font-size:9px;background:rgba(255,107,0,0.15);color:#ff8c33;padding:2px 7px;border-radius:4px;margin-left:5px;">YOU</span>' : ''}
+                    </td>
+                    <td class="p-3 text-sm text-orange-400" data-label="Email">${data.email || '—'}</td>
+                    <td class="p-3" data-label="Password">
+                        <span class="seller-pw-mask" data-pw="${data.password || ''}" onclick="this.textContent = this.textContent === '••••••••' ? this.dataset.pw : '••••••••'" title="Click to show/hide">••••••••</span>
+                    </td>
+                    <td class="p-3 text-xs text-gray-500" data-label="Created">${date}</td>
+                    <td class="p-3 text-right" data-label="Status"><span style="font-size:10px;background:rgba(34,197,94,0.1);color:#4ade80;padding:3px 10px;border-radius:99px;font-weight:700;border:1px solid rgba(34,197,94,0.2);">Active</span></td>
+                </tr>`;
+        });
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-red-400 text-sm">Error loading seller accounts: ${err.message}</td></tr>`;
+    }
+};
+
+/* ---- Create new seller account in Firestore ---- */
+window.createSellerAccount = async function() {
+    const name        = document.getElementById('new-seller-name').value.trim();
+    const prefix      = document.getElementById('new-seller-email-prefix').value.trim().toLowerCase();
+    const password    = document.getElementById('new-seller-password').value;
+    const btn         = document.getElementById('create-seller-btn');
+
+    const email = prefix + '@admin.com';
+
+    // Validate
+    if (!name) { showSellerMsg('❌ Please enter a full name.', 'error'); return; }
+    if (!prefix) { showSellerMsg('❌ Please enter an email prefix.', 'error'); return; }
+    if (password.length < 6) { showSellerMsg('❌ Password must be at least 6 characters.', 'error'); return; }
+    if (!/^[a-zA-Z0-9._+-]+$/.test(prefix)) {
+        showSellerMsg('❌ Email prefix contains invalid characters.', 'error');
+        return;
+    }
+
+    btn.disabled  = true;
+    btn.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:6px;"></span> Creating...';
+
+    try {
+        // Check if email already exists
+        const checkQ = query(collection(db, 'users'), where('email', '==', email));
+        const checkSnap = await getDocs(checkQ);
+        if (!checkSnap.empty) {
+            showSellerMsg('❌ Email ' + email + ' is already registered.', 'error');
+            btn.innerHTML = 'Create Account';
+            btn.disabled  = false;
+            return;
+        }
+
+        const currentUser = JSON.parse(localStorage.getItem('makan_user') || '{}');
+
+        // Save directly to Firestore collection 'users'
+        await addDoc(collection(db, 'users'), {
+            name: name,
+            email: email,
+            password: password, // Stored in Firestore as requested!
+            role: 'seller',
+            createdAt: new Date().toISOString(),
+            createdBy: currentUser.email || 'seller'
+        });
+
+        showSellerMsg(`✅ Seller account "${name}" (${email}) created successfully in Firestore!`, 'success');
+        btn.innerHTML = 'Create Account';
+        btn.disabled  = false;
+
+        // Clear fields
+        document.getElementById('new-seller-name').value         = '';
+        document.getElementById('new-seller-email-prefix').value = '';
+        document.getElementById('new-seller-password').value     = '';
+        document.getElementById('seller-email-preview').textContent = 'yourname@admin.com';
+
+        // Reload seller accounts list
+        setTimeout(() => {
+            window.loadSellerAccounts();
+            window.closeAddSellerModal();
+        }, 1200);
+
+    } catch (err) {
+        showSellerMsg(`❌ Error: ${err.message}`, 'error');
+        btn.innerHTML = 'Create Account';
+        btn.disabled  = false;
+    }
+};
+
+function showSellerMsg(msg, type) {
+    const el = document.getElementById('add-seller-msg');
+    el.textContent  = msg;
+    el.style.display = 'block';
+    if (type === 'error') {
+        el.style.background = 'rgba(239,68,68,0.1)';
+        el.style.border     = '1px solid rgba(239,68,68,0.3)';
+        el.style.color      = '#f87171';
+    } else {
+        el.style.background = 'rgba(34,197,94,0.1)';
+        el.style.border     = '1px solid rgba(34,197,94,0.3)';
+        el.style.color      = '#4ade80';
+    }
+}
+
+// Initial load
+window.loadSellerAccounts();
+</script>
+
+<!-- Seller Core Logic -->
+<script type="module" src="seller.js"></script>
+
+<!-- Modal helpers -->
+<script>
+function openAddSellerModal() {
+    document.getElementById('addSellerModal').classList.remove('hidden');
+    document.getElementById('add-seller-msg').style.display = 'none';
+}
+function closeAddSellerModal() {
+    document.getElementById('addSellerModal').classList.add('hidden');
+}
+function updateSellerEmailPreview() {
+    const prefix = document.getElementById('new-seller-email-prefix').value.trim();
+    document.getElementById('seller-email-preview').textContent = (prefix || 'yourname') + '@admin.com';
+}
+function togglePwSeller() {
+    const inp = document.getElementById('new-seller-password');
+    const btn = document.getElementById('seller-pw-toggle');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+    btn.textContent = inp.type === 'password' ? '👁️' : '🙈';
+}
+document.getElementById('addSellerModal').addEventListener('click', function(e) {
+    if (e.target === this) closeAddSellerModal();
+});
+
+/* ── Dashboard greeting (time-based) ──────────────────────── */
+(function() {
+    const hour = new Date().getHours();
+    let greeting = 'Good evening';
+    if (hour < 12)      greeting = 'Good morning';
+    else if (hour < 17) greeting = 'Good afternoon';
+
+    const user = window.currentUser;
+    const name = user && user.name ? ', ' + user.name.split(' ')[0] : '';
+    const el = document.getElementById('dashboard-greeting');
+    if (el) el.textContent = greeting + name + '! 👋';
+
+    // Also set nav username
+    const nav = document.getElementById('seller-nav-username');
+    if (nav && user && user.name) nav.textContent = user.name;
+})();
+</script>
+
+</body>
+</html>

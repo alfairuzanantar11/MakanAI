@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Makan.ai | Digital Food Concierge</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="WADCSS.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Session Guard: redirect if not logged in -->
+    <script>
+    (function() {
+        const saved = localStorage.getItem('makan_user');
+        if (!saved) {
+            window.location.href = 'login.html';
+        } else {
+            try {
+                window.currentUser = JSON.parse(saved);
+            } catch(e) {
+                localStorage.removeItem('makan_user');
+                window.location.href = 'login.html';
+            }
+        }
+    })();
+    </script>
+</head>
+<script>
+function setQuery(val) {
+    const input = document.getElementById("chat-input");
+    if (!input) return;
+    input.value = val.split(' ')[1].toLowerCase();
+    window.sendMessage();
+}
+</script>
+<body class="text-white antialiased">
+
+<!-- Top Navigation -->
+<nav class="nav-container">
+    <div class="brand">
+        <h1 class="logo">makan.ai</h1>
+        <p class="tagline">Premium Digital Concierge</p>
+    </div>
+
+    <!-- Quick action links & User Controls -->
+    <div class="nav-actions">
+        <!-- Track Order Button -->
+        <button onclick="trackLatestOrderInChat ? trackLatestOrderInChat() : trackLatestOrder()" class="nav-pill-btn track-nav-btn" title="Track Live Order">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="1" y="3" width="15" height="13"></rect>
+                <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+                <circle cx="5.5" cy="18.5" r="2.5"></circle>
+                <circle cx="18.5" cy="18.5" r="2.5"></circle>
+            </svg>
+            <span class="nav-btn-text">Track Order</span>
+        </button>
+
+        <!-- History Button -->
+        <button onclick="showHistory()" class="nav-pill-btn history-nav-btn" title="Order History">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                <path d="M3 3v5h5"></path>
+                <path d="M12 7v5l4 2"></path>
+            </svg>
+            <span class="nav-btn-text">History</span>
+        </button>
+
+        <!-- Live Chat Button -->
+        <button onclick="openBuyerChatLatest()" id="nav-chat-btn" class="nav-pill-btn chat-nav-btn" title="Chat with Restaurant">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span class="nav-btn-text">Chat</span>
+            <span id="buyer-chat-badge" class="hidden nav-badge-unread">!</span>
+        </button>
+
+        <!-- Cart Button -->
+        <button onclick="viewCart()" id="nav-cart-btn" class="nav-pill-btn cart-nav-btn" title="View Shopping Cart">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"></path>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <path d="M16 10a4 4 0 0 1-8 0"></path>
+            </svg>
+            <span class="nav-btn-text">Cart</span>
+            <span id="nav-cart-badge" class="nav-badge-unread" style="display:none; background:#ff6b00; border-color:#060608;">0</span>
+        </button>
+
+        <span class="nav-divider"></span>
+
+        <!-- User profile -->
+        <span id="nav-username" class="nav-user-label"></span>
+
+        <!-- Logout -->
+        <button onclick="handleLogout()" class="nav-logout-btn" title="Sign Out">
+            Sign Out
+        </button>
+    </div>
+</nav>
+
+<!-- Mobile Horizontal Filter Bar (visible on mobile screens) -->
+<div class="mobile-filter-bar">
+    <button onclick="setQuery('📖 Menu')" class="mobile-chip">📖 All Menu</button>
+    <button onclick="setQuery('🔥 Spicy')" class="mobile-chip">🔥 Spicy</button>
+    <button onclick="setQuery('💸 Cheap')" class="mobile-chip">💸 Cheap</button>
+    <button onclick="setQuery('🍰 Sweet')" class="mobile-chip">🍰 Sweet</button>
+    <button onclick="setQuery('🍲 Savory')" class="mobile-chip">🍲 Savory</button>
+</div>
+
+<!-- Desktop Left Quick Filter Dock (hidden on mobile) -->
+<aside class="desktop-filter-dock">
+    <div class="dock-header">
+        <span class="dock-title">FILTER</span>
+    </div>
+    <button onclick="setQuery('📖 Menu')" class="tag-chip-vertical" title="Show All Menu">
+        <span class="chip-emoji">📖</span>
+        <span class="chip-text">Menu</span>
+    </button>
+    <button onclick="setQuery('🔥 Spicy')" class="tag-chip-vertical" title="Spicy Favorites">
+        <span class="chip-emoji">🔥</span>
+        <span class="chip-text">Spicy</span>
+    </button>
+    <button onclick="setQuery('💸 Cheap')" class="tag-chip-vertical" title="Budget Friendly">
+        <span class="chip-emoji">💸</span>
+        <span class="chip-text">Cheap</span>
+    </button>
+    <button onclick="setQuery('🍰 Sweet')" class="tag-chip-vertical" title="Sweet Treats">
+        <span class="chip-emoji">🍰</span>
+        <span class="chip-text">Sweet</span>
+    </button>
+    <button onclick="setQuery('🍲 Savory')" class="tag-chip-vertical" title="Savory Meals">
+        <span class="chip-emoji">🍲</span>
+        <span class="chip-text">Savory</span>
+    </button>
+</aside>
+
+<!-- Chat Window -->
+<main id="chat-window" class="chat-viewport custom-scroll">
+    <div class="msg-bot animate-in">
+        <div class="bot-avatar">🤖</div>
+        <div class="bubble-bot">
+            <span class="sender-name">Assistant Bot</span>
+            <p>Hello! Welcome to <b>Makan.ai</b>. Ready to satisfy your cravings? Browse our full menu or ask for recommendations like <b>"spicy"</b>, <b>"sweet"</b>, or <b>"cheap"</b>.</p>
+            <div class="welcome-quick-actions">
+                <button onclick="setQuery('📖 Menu')" class="welcome-chip">📖 Explore All Menu</button>
+                <button onclick="setQuery('🔥 Spicy')" class="welcome-chip">🔥 Recommended Spicy</button>
+                <button onclick="setQuery('💸 Cheap')" class="welcome-chip">💸 Under 25k</button>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- Floating Cart Trigger Button -->
+<div id="cart-trigger" onclick="viewCart()" class="cart-float hidden" title="View Shopping Cart">
+    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"></path>
+        <line x1="3" y1="6" x2="21" y2="6"></line>
+        <path d="M16 10a4 4 0 0 1-8 0"></path>
+    </svg>
+    <span id="cart-count" class="badge">0</span>
+</div>
+
+<!-- Compatibility elements for scripts that look for these IDs/classes -->
+<div class="history-fab hidden" style="display:none;" onclick="showHistory()"></div>
+<button class="track-fab hidden" style="display:none;" onclick="trackLatestOrderInChat ? trackLatestOrderInChat() : trackLatestOrder()"><span class="track-text">TRACK ORDER</span></button>
+<div id="chat-fab" class="hidden" style="display:none;" onclick="openBuyerChatLatest()"><span id="chat-fab-badge"></span></div>
+
+<!-- Footer Chat Input Bar -->
+<footer class="chat-input-bar">
+    <div class="input-container">
+        <input
+            type="text"
+            id="chat-input"
+            placeholder="Type your cravings (e.g. '2 bakso' or 'ayam bakar')..."
+            class="chat-input-field"
+            onkeypress="if(event.key === 'Enter') sendMessage()"
+            autocomplete="off"
+        >
+        <button onclick="sendMessage()" class="chat-send-btn" title="Send Message">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+        </button>
+    </div>
+</footer>
+
+<!-- Shopping Cart Drawer -->
+<div id="cart-drawer" class="hidden cart-drawer-overlay" onclick="if(event.target===this) closeCartDrawer()">
+    <div class="cart-drawer-panel">
+        <!-- Cart Header -->
+        <div class="cart-drawer-header">
+            <div class="flex items-center gap-3">
+                <div class="cart-drawer-icon">🛒</div>
+                <div>
+                    <h2 class="cart-drawer-title">Your Cart</h2>
+                    <span class="cart-drawer-subtitle"><span id="cart-drawer-count">0</span> items</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button onclick="clearCart()" class="cart-clear-btn" title="Clear all items">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                </button>
+                <button onclick="closeCartDrawer()" class="cart-close-btn" title="Close cart">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Cart Items -->
+        <div id="cart-drawer-body" class="cart-drawer-body custom-scroll">
+        </div>
+
+        <!-- Cart Footer -->
+        <div id="cart-drawer-footer" class="cart-drawer-footer">
+            <div class="cart-footer-summary">
+                <div class="cart-footer-row">
+                    <span class="cart-footer-label">Subtotal (<span id="cart-drawer-total-items">0 items</span>)</span>
+                    <span class="cart-footer-price" id="cart-drawer-total">Rp 0</span>
+                </div>
+            </div>
+            <div class="cart-footer-actions">
+                <button onclick="closeCartDrawer(); setQuery('📖 Menu');" class="cart-continue-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                    Continue Shopping
+                </button>
+                <button onclick="startCheckout()" class="cart-checkout-btn">
+                    Checkout
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Buyer to Seller Chat Modal -->
+<div id="buyerChatModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[200]">
+    <div class="bg-[#111] border border-white/10 rounded-3xl w-full max-w-md animate-in flex flex-col h-[520px] overflow-hidden relative shadow-2xl">
+        <div class="bg-gradient-to-r from-[#ff6b00] to-[#e65c00] p-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-black/20 flex items-center justify-center text-sm font-bold text-black">🍳</div>
+                <div>
+                    <h2 class="text-sm font-800 text-black">Makan.ai Kitchen</h2>
+                    <p class="text-[10px] text-black/80 font-medium">Order #<span id="buyerChatOrderId"></span> · Live Chat</p>
+                </div>
+            </div>
+            <button onclick="closeBuyerChat()" class="text-black/70 hover:text-black hover:bg-black/10 rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm transition-all" title="Close">✕</button>
+        </div>
+        <div id="buyerChatBody" class="flex-1 p-4 overflow-y-auto flex flex-col gap-3 custom-scroll">
+            <div style="text-align:center; color:#555; font-size:0.8rem; padding:1rem;">Loading messages...</div>
+        </div>
+        <div class="p-3 border-t border-white/10 bg-black/40 flex gap-2">
+            <input type="text" id="buyerChatInput" placeholder="Message the restaurant..." class="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm outline-none focus:border-orange-500 transition-colors" onkeypress="if(event.key==='Enter') sendBuyerChat()">
+            <button onclick="sendBuyerChat()" class="bg-gradient-to-r from-[#ff6b00] to-[#e65c00] text-black font-extrabold px-4 py-2 rounded-xl hover:opacity-90 transition-all text-sm">Send</button>
+        </div>
+    </div>
+</div>
+
+<script src="buyer-firebase.js" type="module"></script>
+<script src="WADJS.js"></script>
+<script>
+// Subtle navbar scroll shadow
+document.addEventListener("DOMContentLoaded", () => {
+    const chatWin = document.getElementById("chat-window");
+    const nav = document.querySelector(".nav-container");
+    if (chatWin && nav) {
+        chatWin.addEventListener("scroll", () => {
+            if (chatWin.scrollTop > 12) {
+                nav.classList.add("scrolled");
+            } else {
+                nav.classList.remove("scrolled");
+            }
+        }, { passive: true });
+    }
+});
+</script>
+</body>
+</html>
