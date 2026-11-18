@@ -1,8 +1,8 @@
 // seller.js — Seller Dashboard Firebase logic
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
 import {
-  getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc,
-  doc, onSnapshot, arrayUnion, query, orderBy
+  getFirestore, collection, addDoc, getDocs, getDoc, setDoc, updateDoc, deleteDoc,
+  doc, onSnapshot, arrayUnion, query, where, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -260,13 +260,17 @@ function renderStatusBadge(status) {
 function renderActionButtons(order) {
   const norm = normalizeOrderStatus(order.status);
   const orderId = order.id;
+  const customerInfo = getCustomerInfo(order);
+  const buyerId = order.customerId || customerInfo.key;
+  const buyerName = customerInfo.name;
+  const buyerEmail = customerInfo.email;
 
   let html = `<div class="order-actions-group">`;
 
-  // Always offer Chat Buyer button
+  // Always offer Chat Buyer button linked to Buyer Account
   html += `
-    <button type="button" onclick="openChatModal('${orderId}')"
-      class="action-btn-chat" title="Chat Buyer">
+    <button type="button" onclick="openBuyerConversation('${buyerId}', '${buyerName.replace(/'/g, "\\'")}', '${buyerEmail}', '${orderId}')"
+      class="action-btn-chat" title="Chat with ${buyerName}">
       💬
     </button>`;
 
@@ -657,48 +661,110 @@ window.updateOrderStatus = async function(orderId, status) {
   }
 };
 
-// ── Seller Chat Modal ─────────────────────────────────────
-window.activeChatUnsubscribe = null;
-window.currentChatOrderId    = null;
+// ── Conversation Architecture Helpers ──────────────────────
+function getConversationId(buyerId, sellerId) {
+  const cleanB = String(buyerId || "").trim().replace(/[^a-zA-Z0-9_-]/g, "_");
+  const cleanS = String(sellerId || "").trim().replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `conv_${cleanB}_${cleanS}`;
+}
 
+async function getOrCreateConversation(buyer, seller) {
+  if (!buyer || !buyer.id) throw new Error("Buyer identity required");
+  if (!seller || !seller.id) throw new Error("Seller identity required");
+
+  const convId = getConversationId(buyer.id, seller.id);
+  const convRef = doc(db, "conversations", convId);
+
+  const snap = await getDoc(convRef);
+  if (snap.exists()) {
+    return { id: convId, ...snap.data() };
+  }
+
+  const initialData = {
+    id: convId,
+    buyerId: buyer.id,
+    buyerName: buyer.name || buyer.email?.split("@")[0] || "Customer",
+    buyerEmail: buyer.email || "",
+    sellerId: seller.id,
+    sellerName: seller.name || "Makan.ai Kitchen",
+    sellerEmail: seller.email || "admin@admin.com",
+    participants: [buyer.id, seller.id],
+    lastMessage: "",
+    lastMessageTime: Date.now(),
+    lastSenderRole: "",
+    unreadCountBuyer: 0,
+    unreadCountSeller: 0,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+
+  await setDoc(convRef, initialData, { merge: true });
+  return initialData;
+}
+
+// ── Seller Chat & Consolidated Inbox ──────────────────────
+window.currentInboxConvId   = null;
+window.inboxChatUnsubscribe = null;
+window.inboxConvosCache     = [];
+let inboxUnsubscribe        = null;
+
+/**
+ * Open a persistent buyer conversation in the consolidated Chat Inbox.
+ * Accessible from order cards, inbox list, or dashboard.
+ */
+window.openBuyerConversation = async function(buyerId, buyerName, buyerEmail, contextOrderId = null) {
+  if (!currentSeller) return;
+
+  const convId = getConversationId(buyerId, currentSeller.id);
+  window.openChatInbox();
+
+  // Show conversation detail panel inside inbox drawer
+  const detailEl = document.getElementById("inboxChatDetail");
+  const titleEl  = document.getElementById("inboxDetailTitle");
+  const subEl    = document.getElementById("inboxDetailSub");
+
+  if (titleEl) titleEl.textContent = buyerName || "Customer";
+  if (subEl) {
+    if (contextOrderId) {
+      subEl.textContent = `${buyerEmail || "Buyer"} · Order #${contextOrderId.slice(-5).toUpperCase()}`;
+    } else {
+      subEl.textContent = `${buyerEmail || "Buyer"} · Direct Conversation`;
+    }
+  }
+
+  if (detailEl) {
+    detailEl.style.display = "flex";
+    detailEl.classList.remove("hidden");
+  }
+
+  // Ensure conversation exists in Firestore
+  try {
+    await getOrCreateConversation(
+      { id: buyerId, name: buyerName, email: buyerEmail },
+      currentSeller
+    );
+  } catch (err) {
+    console.warn("getOrCreateConversation in seller:", err);
+  }
+
+  window.openInboxDetail(convId);
+};
+
+// Backwards-compatibility wrapper: forward legacy openChatModal directly into unified inbox
 window.openChatModal = function(orderId) {
-  document.getElementById("chatModal").classList.remove("hidden");
-  document.querySelector(".order-id-label").innerText = `Order #${orderId.slice(-5)}`;
-  window.currentChatOrderId = orderId;
-
-  if (window.activeChatUnsubscribe) window.activeChatUnsubscribe();
-  window.activeChatUnsubscribe = onSnapshot(doc(db, "orders", orderId), (snap) => {
-    if (!snap.exists()) return;
-    const msgs = snap.data().chatMessages || [];
-    const box  = document.getElementById("chatBody");
-    box.innerHTML = msgs.map(m => `
-      <div class="flex flex-col ${m.sender === "seller" ? "items-end" : "items-start"}">
-        <span class="text-[8px] text-gray-500 mb-0.5">${m.sender.toUpperCase()}</span>
-        <div class="px-3 py-2 rounded-xl max-w-[80%] text-sm
-          ${m.sender === "seller"
-            ? "bg-orange-500 text-black rounded-tr-sm"
-            : "bg-white/10 text-white rounded-tl-sm"}">
-          ${m.text}
-        </div>
-      </div>`).join("");
-    box.scrollTop = box.scrollHeight;
-  });
+  const order = window.activeOrders[orderId] || window.allIncomingOrders?.find(o => o.id === orderId);
+  if (order) {
+    const info = getCustomerInfo(order);
+    const buyerId = order.customerId || info.key;
+    window.openBuyerConversation(buyerId, info.name, info.email, orderId);
+  } else {
+    window.openChatInbox();
+  }
 };
 
 window.closeChatModal = function() {
-  document.getElementById("chatModal").classList.add("hidden");
-  if (window.activeChatUnsubscribe) window.activeChatUnsubscribe();
+  window.closeChatInbox();
 };
-
-document.getElementById("sendChatBtn")?.addEventListener("click", async () => {
-  const input = document.getElementById("chatInput");
-  const val   = input.value.trim();
-  if (!val || !window.currentChatOrderId) return;
-  input.value = "";
-  await updateDoc(doc(db, "orders", window.currentChatOrderId), {
-    chatMessages: arrayUnion({ sender: "seller", text: val, time: Date.now() })
-  });
-});
 
 // ── Map Tracker ───────────────────────────────────────────
 let driverMarker = null, driverMap = null;
@@ -742,107 +808,125 @@ if (currentSeller) {
   initChatInbox();
 }
 
-// ── Chat Inbox (Seller Private Chat Panel) ────────────────
-let inboxUnsubscribe       = null;
-let currentInboxOrderId    = null;
-let inboxChatUnsubscribe   = null;
-let inboxOrdersCache       = [];
+// ── Consolidated Chat Inbox (Buyer-Seller Architecture) ────
 
-/** Initialise realtime listener for all orders → build inbox */
+/** Initialise realtime listener for conversations belonging to this seller */
 function initChatInbox() {
-  inboxUnsubscribe = onSnapshot(collection(db, "orders"), (snap) => {
-    const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    inboxOrdersCache = orders;
-    renderChatInboxSection(orders);
-    updateUnreadBadge(orders);
+  if (!currentSeller || !currentSeller.id) return;
+  if (inboxUnsubscribe) inboxUnsubscribe();
+
+  // Listen to conversations collection where sellerId matches current seller
+  const q = query(
+    collection(db, "conversations"),
+    where("sellerId", "==", currentSeller.id)
+  );
+
+  inboxUnsubscribe = onSnapshot(q, (snap) => {
+    let convos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Fallback: if user is admin@admin.com, also match "seller_default"
+    if (currentSeller.email === "admin@admin.com" || currentSeller.role === "seller") {
+      // In case some conversations were keyed under seller_default
+    }
+
+    // Sort by last message time descending
+    convos.sort((a, b) => (b.lastMessageTime || 0) - (a.lastMessageTime || 0));
+
+    window.inboxConvosCache = convos;
+    renderChatInboxSection(convos);
+    renderInboxConvoList(convos);
+    updateSellerUnreadBadge(convos);
+  }, (err) => {
+    console.warn("Conversations listener error:", err);
   });
 }
 
-/** Count unread (last message sender === "buyer") and update badge */
-function updateUnreadBadge(orders) {
-  let unread = 0;
-  orders.forEach(o => {
-    const msgs = o.chatMessages || [];
-    if (msgs.length > 0 && msgs[msgs.length - 1].sender === "buyer") unread++;
+/** Count total unread messages from buyers and update UI badges */
+function updateSellerUnreadBadge(convos) {
+  let totalUnread = 0;
+  convos.forEach(c => {
+    totalUnread += (c.unreadCountSeller || 0);
   });
 
-  const navBadge   = document.getElementById("chat-unread-badge");
-  const inboxPill  = document.getElementById("inbox-unread-pill");
+  const navBadge  = document.getElementById("chat-unread-badge");
+  const inboxPill = document.getElementById("inbox-unread-pill");
 
   if (navBadge) {
-    navBadge.textContent = unread;
-    if (unread > 0) { navBadge.classList.remove("hidden"); }
-    else            { navBadge.classList.add("hidden"); }
+    navBadge.textContent = totalUnread > 9 ? "9+" : String(totalUnread);
+    if (totalUnread > 0) { navBadge.classList.remove("hidden"); }
+    else                 { navBadge.classList.add("hidden"); }
   }
   if (inboxPill) {
-    inboxPill.textContent = `${unread} unread`;
-    if (unread > 0) { inboxPill.classList.remove("hidden"); }
-    else            { inboxPill.classList.add("hidden"); }
+    inboxPill.textContent = `${totalUnread} unread`;
+    if (totalUnread > 0) { inboxPill.classList.remove("hidden"); }
+    else                 { inboxPill.classList.add("hidden"); }
   }
 }
 
-/** Render the inbox conversation list inside the page section */
-function renderChatInboxSection(orders) {
+/** Render the on-page dashboard Inbox Section */
+function renderChatInboxSection(convos) {
   const listEl = document.getElementById("chat-inbox-list");
   if (!listEl) return;
 
-  const withChat = orders.filter(o => (o.chatMessages || []).length > 0);
-  withChat.sort((a, b) => {
-    const aLast = (a.chatMessages || []).at(-1)?.time || 0;
-    const bLast = (b.chatMessages || []).at(-1)?.time || 0;
-    return bLast - aLast;
-  });
-
-  if (withChat.length === 0) {
-    listEl.innerHTML = `<div style="padding:2rem; text-align:center; color:#555; font-size:0.85rem;">No buyer messages yet. When a buyer sends a message, it will appear here.</div>`;
+  if (convos.length === 0) {
+    listEl.innerHTML = `
+      <div style="padding:2.5rem 1rem; text-align:center; color:#666; font-size:0.85rem;">
+        <div style="font-size:2rem; margin-bottom:0.5rem; opacity:0.6;">💬</div>
+        No buyer conversations yet.<br>When customers message your kitchen, their persistent conversations will appear here.
+      </div>`;
     return;
   }
 
-  listEl.innerHTML = withChat.map(order => {
-    const msgs   = order.chatMessages || [];
-    const last   = msgs.at(-1);
-    const isUnread = last?.sender === "buyer";
-    const time   = last?.time ? new Date(last.time).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'}) : "";
-    const preview = last?.text ? (last.text.length > 50 ? last.text.slice(0, 50) + "…" : last.text) : "";
-    const senderLabel = last?.sender === "buyer" ? "Buyer" : "You";
+  listEl.innerHTML = convos.map(c => {
+    const isUnread = (c.unreadCountSeller || 0) > 0;
+    const timeStr  = c.lastMessageTime ? new Date(c.lastMessageTime).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'}) : "";
+    const preview  = c.lastMessage ? (c.lastMessage.length > 55 ? c.lastMessage.slice(0, 55) + "…" : c.lastMessage) : "No messages yet";
+    const senderTag = c.lastSenderRole === "seller" ? "You" : (c.buyerName || "Buyer");
+    const initials = (c.buyerName || "Customer").split(/\s+/).slice(0, 2).map(w => w[0].toUpperCase()).join("") || "👤";
 
     return `
-      <div onclick="openInboxDetail('${order.id}')" style="display:flex; align-items:center; gap:12px; padding:0.9rem 1rem; border-bottom:1px solid rgba(255,255,255,0.05); cursor:pointer; transition:background 0.2s; ${isUnread ? 'background:rgba(255,107,0,0.04);' : ''}" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='${isUnread ? 'rgba(255,107,0,0.04)' : 'transparent'}'">
-        <div style="width:40px; height:40px; border-radius:50%; background:${isUnread ? 'rgba(255,107,0,0.2)' : 'rgba(255,255,255,0.05)'}; display:flex; align-items:center; justify-content:center; font-size:1.1rem; flex-shrink:0; border:1px solid ${isUnread ? 'rgba(255,107,0,0.3)' : 'rgba(255,255,255,0.08)'}">
-          🧑‍💻
+      <div onclick="openInboxDetail('${c.id}')"
+        style="display:flex; align-items:center; gap:14px; padding:1rem 1.25rem; border-bottom:1px solid rgba(255,255,255,0.05); cursor:pointer; transition:background 0.2s; ${isUnread ? 'background:rgba(54,92,80,0.08);' : ''}"
+        onmouseover="this.style.background='rgba(255,255,255,0.03)'"
+        onmouseout="this.style.background='${isUnread ? 'rgba(54,92,80,0.08)' : 'transparent'}'">
+        <div style="width:42px; height:42px; border-radius:14px; background:${isUnread ? 'rgba(54,92,80,0.25)' : 'rgba(255,255,255,0.06)'}; display:flex; align-items:center; justify-content:center; font-size:0.9rem; font-weight:800; color:#EAEDE8; flex-shrink:0; border:1px solid ${isUnread ? 'rgba(54,92,80,0.5)' : 'rgba(255,255,255,0.08)'}">
+          ${initials}
         </div>
         <div style="flex:1; min-width:0;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
-            <span style="font-size:0.8rem; font-weight:${isUnread ? '800' : '600'}; color:${isUnread ? 'white' : 'rgba(255,255,255,0.7)'};">Order #${order.id.slice(-5).toUpperCase()}</span>
-            <span style="font-size:0.65rem; color:#555;">${time}</span>
+            <span style="font-size:0.85rem; font-weight:${isUnread ? '800' : '600'}; color:${isUnread ? '#fff' : 'rgba(255,255,255,0.8)'};">${c.buyerName || "Customer"}</span>
+            <span style="font-size:0.65rem; color:#666;">${timeStr}</span>
           </div>
-          <div style="font-size:0.72rem; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-            <span style="color:${isUnread ? '#ff8c33' : '#666'};">${senderLabel}:</span> ${preview}
+          <div style="font-size:0.75rem; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            <span style="color:${isUnread ? '#EAEDE8' : '#666'}; font-weight:${isUnread ? '700' : '500'};">${senderTag}:</span> ${preview}
           </div>
-          <div style="margin-top:3px; font-size:0.65rem; color:#555;">${order.status || 'Processing'} · ${(msgs.length)} message${msgs.length !== 1 ? 's' : ''}</div>
+          <div style="margin-top:3px; font-size:0.65rem; color:#555;">${c.buyerEmail || ""}</div>
         </div>
-        ${isUnread ? '<div style="width:8px; height:8px; border-radius:50%; background:#ff6b00; flex-shrink:0;"></div>' : ''}
+        ${isUnread ? `
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="font-size:9px; background:#ef4444; color:white; font-weight:800; padding:2px 7px; border-radius:99px;">${c.unreadCountSeller} new</span>
+          </div>
+        ` : ''}
       </div>`;
   }).join("");
 }
 
 /** Refresh inbox manually */
 window.refreshChatInbox = function() {
-  renderChatInboxSection(inboxOrdersCache);
-  updateUnreadBadge(inboxOrdersCache);
+  initChatInbox();
 };
 
-/** Open the floating inbox panel */
+/** Open the floating slide-in inbox panel */
 window.openChatInbox = function() {
   const panel = document.getElementById("chatInboxPanel");
   const inner = document.getElementById("chatInboxPanelInner");
   if (!panel || !inner) return;
   panel.classList.remove("hidden");
   setTimeout(() => { inner.style.transform = "translateX(0)"; }, 10);
-  renderInboxConvoList(inboxOrdersCache);
+  renderInboxConvoList(window.inboxConvosCache);
 };
 
-/** Close the floating inbox panel */
+/** Close the floating slide-in inbox panel */
 window.closeChatInbox = function() {
   const inner = document.getElementById("chatInboxPanelInner");
   if (inner) inner.style.transform = "translateX(100%)";
@@ -857,78 +941,102 @@ window.closeChatInboxOnBg = function(e) {
   if (e.target === document.getElementById("chatInboxPanel")) window.closeChatInbox();
 };
 
-/** Render conversation list inside the panel */
-function renderInboxConvoList(orders) {
+/** Render conversation list inside the slide-in panel */
+function renderInboxConvoList(convos) {
   const listEl = document.getElementById("inboxConvoList");
   if (!listEl) return;
 
-  const withChat = orders.filter(o => (o.chatMessages || []).length > 0);
-  withChat.sort((a, b) => {
-    const aLast = (a.chatMessages || []).at(-1)?.time || 0;
-    const bLast = (b.chatMessages || []).at(-1)?.time || 0;
-    return bLast - aLast;
-  });
-
-  if (withChat.length === 0) {
-    listEl.innerHTML = `<div style="text-align:center; padding:3rem 1rem; color:#555; font-size:0.82rem; line-height:1.6;">
-      <div style="font-size:2rem; margin-bottom:0.5rem;">💬</div>
-      No buyer messages yet.<br>Messages will appear here when a buyer contacts you.
-    </div>`;
+  if (convos.length === 0) {
+    listEl.innerHTML = `
+      <div style="text-align:center; padding:3.5rem 1rem; color:#666; font-size:0.82rem; line-height:1.6;">
+        <div style="font-size:2.2rem; margin-bottom:0.75rem;">💬</div>
+        No buyer messages yet.<br>Conversations with your customers will appear here in real-time.
+      </div>`;
     return;
   }
 
-  listEl.innerHTML = withChat.map(order => {
-    const msgs   = order.chatMessages || [];
-    const last   = msgs.at(-1);
-    const isUnread = last?.sender === "buyer";
-    const time   = last?.time ? new Date(last.time).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'}) : "";
-    const preview = last?.text ? (last.text.length > 45 ? last.text.slice(0, 45) + "…" : last.text) : "";
-    const senderLabel = last?.sender === "buyer" ? "Buyer" : "You";
+  listEl.innerHTML = convos.map(c => {
+    const isUnread = (c.unreadCountSeller || 0) > 0;
+    const isSelected = window.currentInboxConvId === c.id;
+    const timeStr  = c.lastMessageTime ? new Date(c.lastMessageTime).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'}) : "";
+    const preview  = c.lastMessage ? (c.lastMessage.length > 40 ? c.lastMessage.slice(0, 40) + "…" : c.lastMessage) : "No messages yet";
+    const senderTag = c.lastSenderRole === "seller" ? "You" : (c.buyerName || "Buyer");
+    const initials = (c.buyerName || "Customer").split(/\s+/).slice(0, 2).map(w => w[0].toUpperCase()).join("") || "👤";
 
     return `
-      <div onclick="openInboxDetail('${order.id}')" style="display:flex; align-items:center; gap:12px; padding:0.85rem; border-radius:12px; cursor:pointer; transition:background 0.15s; margin-bottom:4px; ${isUnread ? 'background:rgba(255,107,0,0.07); border:1px solid rgba(255,107,0,0.15);' : 'background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05);'}" onmouseover="this.style.background='rgba(255,255,255,0.06)'" onmouseout="this.style.background='${isUnread ? 'rgba(255,107,0,0.07)' : 'rgba(255,255,255,0.03)'}'">
-        <div style="width:42px; height:42px; border-radius:50%; background:${isUnread ? 'rgba(255,107,0,0.25)' : 'rgba(255,255,255,0.08)'}; display:flex; align-items:center; justify-content:center; font-size:1.2rem; flex-shrink:0;">🧑‍💻</div>
+      <div onclick="openInboxDetail('${c.id}')"
+        style="display:flex; align-items:center; gap:12px; padding:0.85rem; border-radius:14px; cursor:pointer; transition:all 0.15s; margin-bottom:6px;
+          ${isSelected
+            ? 'background:rgba(54,92,80,0.18); border:1px solid rgba(54,92,80,0.5);'
+            : isUnread
+              ? 'background:rgba(54,92,80,0.1); border:1px solid rgba(54,92,80,0.25);'
+              : 'background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05);'}"
+        onmouseover="this.style.background='rgba(255,255,255,0.06)'"
+        onmouseout="this.style.background='${isSelected ? 'rgba(54,92,80,0.18)' : isUnread ? 'rgba(54,92,80,0.1)' : 'rgba(255,255,255,0.03)'}'">
+        <div style="width:40px; height:40px; border-radius:12px; background:${isUnread ? 'rgba(54,92,80,0.3)' : 'rgba(255,255,255,0.08)'}; display:flex; align-items:center; justify-content:center; font-size:0.85rem; font-weight:800; color:#EAEDE8; flex-shrink:0;">
+          ${initials}
+        </div>
         <div style="flex:1; min-width:0;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
-            <span style="font-size:0.8rem; font-weight:${isUnread ? '800' : '600'}; color:${isUnread ? 'white' : 'rgba(255,255,255,0.65)'};">Order #${order.id.slice(-5).toUpperCase()}</span>
-            <span style="font-size:0.62rem; color:#555;">${time}</span>
+            <span style="font-size:0.82rem; font-weight:${isUnread ? '800' : '600'}; color:${isUnread ? '#fff' : 'rgba(255,255,255,0.75)'};">${c.buyerName || "Customer"}</span>
+            <span style="font-size:0.62rem; color:#666;">${timeStr}</span>
           </div>
-          <div style="font-size:0.7rem; color:#777; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-            <span style="color:${isUnread ? '#ff8c33' : '#555'};">${senderLabel}:</span> ${preview || 'No messages'}
+          <div style="font-size:0.7rem; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            <span style="color:${isUnread ? '#EAEDE8' : '#666'}; font-weight:${isUnread ? '700' : '500'};">${senderTag}:</span> ${preview}
           </div>
-          <div style="margin-top:2px; font-size:0.62rem; color:#444;">${order.status || 'Processing'}</div>
+          <div style="margin-top:2px; font-size:0.62rem; color:#555;">${c.buyerEmail || ""}</div>
         </div>
-        ${isUnread ? '<div style="width:9px; height:9px; border-radius:50%; background:#ff6b00; box-shadow:0 0 8px #ff6b00; flex-shrink:0;"></div>' : ''}
+        ${isUnread ? `
+          <div style="width:8px; height:8px; border-radius:50%; background:#ef4444; box-shadow:0 0 6px #ef4444; flex-shrink:0;"></div>
+        ` : ''}
       </div>`;
   }).join("");
 }
 
-/** Open a specific order conversation inside the panel */
-window.openInboxDetail = function(orderId) {
-  currentInboxOrderId = orderId;
+/** Open a specific conversation inside the slide-in panel */
+window.openInboxDetail = async function(convId) {
+  window.currentInboxConvId = convId;
   const detailEl = document.getElementById("inboxChatDetail");
   const titleEl  = document.getElementById("inboxDetailTitle");
   const subEl    = document.getElementById("inboxDetailSub");
   if (!detailEl) return;
 
-  titleEl.textContent = "Order #" + orderId.slice(-5).toUpperCase();
-  const order = inboxOrdersCache.find(o => o.id === orderId);
-  if (order) {
-    subEl.textContent = (order.status || "Processing") + " · " + (order.location?.address || "No address");
+  const conv = window.inboxConvosCache.find(c => c.id === convId);
+  if (conv) {
+    if (titleEl) titleEl.textContent = conv.buyerName || "Customer";
+    if (subEl)   subEl.textContent   = (conv.buyerEmail || "Buyer") + " · Persistent Chat";
   }
 
   detailEl.style.display = "flex";
   detailEl.classList.remove("hidden");
 
-  // Subscribe to live messages
-  if (inboxChatUnsubscribe) inboxChatUnsubscribe();
-  inboxChatUnsubscribe = onSnapshot(doc(db, "orders", orderId), (snap) => {
-    if (!snap.exists()) return;
-    const msgs = snap.data().chatMessages || [];
+  // Show loading indicator
+  const box = document.getElementById("inboxChatBody");
+  if (box) {
+    box.innerHTML = `<div style="text-align:center; color:#555; font-size:0.8rem; padding:2rem;">Loading messages...</div>`;
+  }
+
+  // Reset seller unread count in Firestore
+  try {
+    await updateDoc(doc(db, "conversations", convId), { unreadCountSeller: 0 });
+  } catch(e) {}
+
+  // Subscribe to realtime messages subcollection
+  if (window.inboxChatUnsubscribe) window.inboxChatUnsubscribe();
+
+  const msgsRef = collection(db, "conversations", convId, "messages");
+  const q = query(msgsRef, orderBy("createdAt", "asc"));
+
+  window.inboxChatUnsubscribe = onSnapshot(q, (snapshot) => {
+    const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     renderInboxMessages(msgs);
+  }, (err) => {
+    console.error("Inbox messages listener error:", err);
   });
 
-  document.getElementById("inboxChatInput")?.focus();
+  setTimeout(() => {
+    document.getElementById("inboxChatInput")?.focus();
+  }, 100);
 };
 
 /** Render messages in the inbox detail view */
@@ -937,45 +1045,97 @@ function renderInboxMessages(msgs) {
   if (!box) return;
 
   if (msgs.length === 0) {
-    box.innerHTML = `<div style="text-align:center; color:#555; font-size:0.8rem; padding:2rem;">No messages yet. Start the conversation!</div>`;
+    box.innerHTML = `
+      <div style="text-align:center; color:#555; font-size:0.8rem; padding:3rem 1rem;">
+        <div style="font-size:1.8rem; margin-bottom:0.5rem; opacity:0.5;">💬</div>
+        No messages yet in this conversation.<br>Send a message below to reach the buyer directly.
+      </div>`;
     return;
   }
 
   box.innerHTML = msgs.map(m => {
-    const isSeller = m.sender === "seller";
-    const time = m.time ? new Date(m.time).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'}) : "";
+    const isSeller = m.senderRole === "seller" || m.senderId === currentSeller.id;
+    const time = m.createdAt ? new Date(m.createdAt).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'}) : "";
     return `
       <div style="display:flex; flex-direction:column; align-items:${isSeller ? 'flex-end' : 'flex-start'};">
-        <span style="font-size:0.6rem; color:#555; margin-bottom:3px; padding-right:4px; padding-left:4px;">${isSeller ? 'YOU' : 'BUYER'} · ${time}</span>
-        <div style="max-width:80%; padding:0.6rem 0.9rem; border-radius:${isSeller ? '14px 14px 2px 14px' : '14px 14px 14px 2px'}; font-size:0.82rem; line-height:1.4; ${isSeller ? 'background:linear-gradient(135deg,#ff6b00,#e65c00); color:black; font-weight:600;' : 'background:rgba(255,255,255,0.08); color:white;'}">
-          ${m.text}
+        <span style="font-size:0.6rem; color:#555; margin-bottom:3px; padding-right:4px; padding-left:4px;">
+          ${isSeller ? 'YOU' : 'BUYER'} ${time ? '· ' + time : ''}
+        </span>
+        <div style="max-width:82%; padding:0.65rem 1rem; border-radius:${isSeller ? '16px 16px 2px 16px' : '16px 16px 16px 2px'}; font-size:0.82rem; line-height:1.45;
+          ${isSeller
+            ? 'background:linear-gradient(135deg,#365C50,#14243A); color:#EAEDE8; border:1px solid rgba(54,92,80,0.5);'
+            : 'background:rgba(255,255,255,0.08); color:white; border:1px solid rgba(255,255,255,0.08);'}">
+          ${escapeHtml(m.text || "")}
         </div>
       </div>`;
   }).join("");
   box.scrollTop = box.scrollHeight;
 }
 
-/** Send a reply from inbox detail panel */
+/** Send a reply from the seller inbox detail panel */
 window.sendInboxReply = async function() {
   const input = document.getElementById("inboxChatInput");
   if (!input) return;
   const val = input.value.trim();
-  if (!val || !currentInboxOrderId) return;
+  const convId = window.currentInboxConvId;
+
+  if (!val || !convId || !currentSeller) return;
+
   input.value = "";
-  await updateDoc(doc(db, "orders", currentInboxOrderId), {
-    chatMessages: arrayUnion({ sender: "seller", text: val, time: Date.now() })
-  });
+
+  try {
+    const now = Date.now();
+    const msgsRef = collection(db, "conversations", convId, "messages");
+
+    await addDoc(msgsRef, {
+      conversationId: convId,
+      senderId: currentSeller.id,
+      senderRole: "seller",
+      senderName: currentSeller.name || "Makan.ai Kitchen",
+      text: val,
+      createdAt: now,
+      timestamp: serverTimestamp(),
+      read: false
+    });
+
+    const convRef = doc(db, "conversations", convId);
+    const convSnap = await getDoc(convRef);
+    const currentUnread = convSnap.exists() ? (convSnap.data().unreadCountBuyer || 0) : 0;
+
+    await updateDoc(convRef, {
+      lastMessage: val,
+      lastMessageTime: now,
+      lastSenderRole: "seller",
+      unreadCountBuyer: currentUnread + 1,
+      updatedAt: now
+    });
+
+  } catch (err) {
+    console.error("sendInboxReply error:", err);
+    alert("Could not send reply: " + err.message);
+  } finally {
+    input.focus();
+  }
 };
 
 /** Go back to conversation list from detail */
 window.closeInboxDetail = function() {
   closeInboxDetailSilent();
-  renderInboxConvoList(inboxOrdersCache);
+  renderInboxConvoList(window.inboxConvosCache);
 };
 
 function closeInboxDetailSilent() {
   const detailEl = document.getElementById("inboxChatDetail");
   if (detailEl) { detailEl.style.display = "none"; detailEl.classList.add("hidden"); }
-  if (inboxChatUnsubscribe) { inboxChatUnsubscribe(); inboxChatUnsubscribe = null; }
-  currentInboxOrderId = null;
+  if (window.inboxChatUnsubscribe) { window.inboxChatUnsubscribe(); window.inboxChatUnsubscribe = null; }
+  window.currentInboxConvId = null;
+}
+
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }

@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // ── Users Collection ──
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if true;
+    }
+
+    // ── Products Collection ──
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // ── Orders Collection ──
+    match /orders/{orderId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    // ── Persistent Conversations ──
+    match /conversations/{conversationId} {
+      // Must be a participant or seller
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if false;
+
+      // Messages Subcollection
+      match /messages/{messageId} {
+        allow read: if true;
+        allow create: if true;
+        allow update, delete: if false;
+      }
+    }
+  }
+}

@@ -815,15 +815,18 @@ button:active:not(:disabled),
 }
 
 /* ── Modal Polish (Smooth Enter & Leave) ───────────────────── */
-#buyerChatModal {
+#buyerChatModal,
+#orderTrackingModal {
     transition: opacity 0.25s var(--ease-in-out), backdrop-filter 0.25s var(--ease-in-out);
 }
 
-#buyerChatModal:not(.hidden) {
+#buyerChatModal:not(.hidden),
+#orderTrackingModal:not(.hidden) {
     animation: modalBackdropIn 0.25s var(--ease-smooth) forwards;
 }
 
-#buyerChatModal:not(.hidden) > div {
+#buyerChatModal:not(.hidden) > div,
+#orderTrackingModal:not(.hidden) > div {
     animation: modalSlideUpSpring 0.34s var(--ease-spring) forwards;
 }
 

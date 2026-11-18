@@ -48,7 +48,7 @@ function setQuery(val) {
     <!-- Quick action links & User Controls -->
     <div class="nav-actions">
         <!-- Track Order Button -->
-        <button onclick="trackLatestOrderInChat ? trackLatestOrderInChat() : trackLatestOrder()" class="nav-pill-btn track-nav-btn" title="Track Live Order">
+        <button onclick="openOrderTracking()" class="nav-pill-btn track-nav-btn" title="Track Live Order">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="1" y="3" width="15" height="13"></rect>
                 <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
@@ -240,25 +240,51 @@ function setQuery(val) {
     </div>
 </div>
 
-<!-- Buyer to Seller Chat Modal -->
+<!-- Buyer to Seller Chat Modal (Persistent Conversation) -->
 <div id="buyerChatModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[200]">
-    <div class="bg-[#111] border border-white/10 rounded-3xl w-full max-w-md animate-in flex flex-col h-[520px] overflow-hidden relative shadow-2xl">
-        <div class="bg-gradient-to-r from-[#365C50] to-[#14243A] p-4 flex justify-between items-center">
+    <div class="bg-[#111] border border-white/10 rounded-3xl w-full max-w-md animate-in flex flex-col h-[520px] overflow-hidden relative shadow-2xl mx-4">
+        <div class="bg-gradient-to-r from-[#365C50] to-[#14243A] p-4 flex justify-between items-center border-b border-white/10">
             <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-black/20 flex items-center justify-center text-sm font-bold text-black">🍳</div>
+                <div class="w-9 h-9 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center text-base">🍳</div>
                 <div>
-                    <h2 class="text-sm font-800 text-black">Makan.ai Kitchen</h2>
-                    <p class="text-[10px] text-black/80 font-medium">Order #<span id="buyerChatOrderId"></span> · Live Chat</p>
+                    <h2 id="buyerChatSellerTitle" class="text-sm font-extrabold text-[#EAEDE8] leading-tight">Makan.ai Kitchen</h2>
+                    <p id="buyerChatSubtitle" class="text-[10px] text-[#A5A69A] font-medium">Direct Merchant Conversation</p>
                 </div>
             </div>
-            <button onclick="closeBuyerChat()" class="text-black/70 hover:text-black hover:bg-black/10 rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm transition-all" title="Close">✕</button>
+            <button onclick="closeBuyerChat()" class="text-[#EAEDE8]/70 hover:text-white hover:bg-white/10 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm transition-all" title="Close Chat">✕</button>
         </div>
         <div id="buyerChatBody" class="flex-1 p-4 overflow-y-auto flex flex-col gap-3 custom-scroll">
-            <div style="text-align:center; color:#555; font-size:0.8rem; padding:1rem;">Loading messages...</div>
+            <div class="flex flex-col items-center justify-center h-full text-center py-8 text-white/40">
+                <p class="text-xs">Loading messages...</p>
+            </div>
         </div>
         <div class="p-3 border-t border-white/10 bg-black/40 flex gap-2">
-            <input type="text" id="buyerChatInput" placeholder="Message the restaurant..." class="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm outline-none focus:border-orange-500 transition-colors" onkeypress="if(event.key==='Enter') sendBuyerChat()">
-            <button onclick="sendBuyerChat()" class="bg-gradient-to-r from-[#365C50] to-[#14243A] text-black font-extrabold px-4 py-2 rounded-xl hover:opacity-90 transition-all text-sm">Send</button>
+            <input type="text" id="buyerChatInput" placeholder="Message the merchant..." class="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-[#365C50] focus:ring-1 focus:ring-[#365C50] transition-colors" onkeypress="if(event.key==='Enter') sendBuyerChat()">
+            <button onclick="sendBuyerChat()" id="buyerChatSendBtn" class="bg-gradient-to-r from-[#365C50] to-[#14243A] text-[#EAEDE8] hover:text-white font-extrabold px-4 py-2.5 rounded-xl hover:opacity-90 active:scale-95 transition-all text-sm border border-[#365C50]/40 shadow-md">Send</button>
+        </div>
+    </div>
+</div>
+
+<!-- Dedicated Order Tracking Modal (Multi-order & Live GPS) -->
+<div id="orderTrackingModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[200]">
+    <div class="bg-[#111] border border-white/10 rounded-3xl w-full max-w-lg animate-in flex flex-col max-h-[90vh] overflow-hidden relative shadow-2xl mx-4">
+        <!-- Modal Header -->
+        <div class="bg-gradient-to-r from-[#365C50] to-[#14243A] p-4 flex justify-between items-center border-b border-white/10">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center text-base">🛵</div>
+                <div>
+                    <h2 class="text-sm font-extrabold text-[#EAEDE8] leading-tight">Order Tracker</h2>
+                    <p class="text-[10px] text-[#A5A69A] font-medium">Real-time status & driver GPS</p>
+                </div>
+            </div>
+            <button onclick="closeOrderTracking()" class="text-[#EAEDE8]/70 hover:text-white hover:bg-white/10 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm transition-all" title="Close Tracker">✕</button>
+        </div>
+        <!-- Modal Body -->
+        <div id="orderTrackingBody" class="flex-1 p-4 overflow-y-auto custom-scroll space-y-4">
+            <div class="flex flex-col items-center justify-center py-16 text-center text-white/40">
+                <div class="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+                <p class="text-sm font-semibold">Connecting live feed...</p>
+            </div>
         </div>
     </div>
 </div>
